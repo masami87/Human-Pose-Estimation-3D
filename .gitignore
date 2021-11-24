@@ -15,4 +15,7 @@ data/
 # ignore vecode
 .vscode/
 
+# ignore hydra output
+outputs/
+
 *.bin
