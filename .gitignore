@@ -9,6 +9,9 @@ __pycache__/
 # ignore checkpoint
 checkpoint/
 
+# ignore data
+data/
+
 # ignore vecode
 .vscode/
 
