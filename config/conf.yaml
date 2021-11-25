@@ -1,0 +1,31 @@
+data_dir: "/home/wt/py_projects/HPE-3d/data/"
+checkpoint: "checkpoint"
+
+
+evaluate: false
+resume: ""
+
+# data
+subjects_train: "S1,S5,S6,S7,S8"
+subjects_test: "S9,S11"
+dataset: "h36m"
+keypoints: "cpn_ft_h36m_dbb"
+actions: "*"
+downsample: 5
+subset: 1
+
+# model
+architecture: "3,3,3"
+channels: 1024
+dropout: 0.05
+causal: false
+dense: false
+disable_optimizations: false
+
+# train
+batch_size: 128
+stride: 1
+learning_rate: 0.001
+lr_decay: 0.95
+epochs: 60
+data_augmentation: false
