@@ -5,6 +5,7 @@ from time import time
 import numpy as np
 import torch
 import torch.nn as nn
+from alive_progress import alive_bar
 
 from common.camera import world_to_camera, normalize_screen_coordinates
 from common.utils import deterministic_random
@@ -178,36 +179,97 @@ def load_weight(cfg, model_pos_train, model_pos):
     return model_pos_train, model_pos, checkpoint
 
 
-def train(model_pos_train, train_generator, optimizer):
+def train(model_pos_train, train_loader, optimizer):
     epoch_loss_3d_train = 0
     N = 0
 
     # TODO dataloader and tqdm
-    for _, batch_3d, batch_2d in train_generator.next_epoch():
-        inputs_3d = torch.from_numpy(batch_3d.astype('float32'))
-        inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
-        if torch.cuda.is_available():
-            inputs_3d = inputs_3d.cuda()
-            inputs_2d = inputs_2d.cuda()
+    total = len(train_loader)
+    with alive_bar(total, title='Train', spinner='elements') as bar:
+        for _, inputs_3d, inputs_2d in train_loader:
+            if torch.cuda.is_available():
+                inputs_3d = inputs_3d.cuda()
+                inputs_2d = inputs_2d.cuda()
 
-        # TODO
-        inputs_3d[:, :, 0] = 0
+            # TODO
+            inputs_3d[:, :, 0] = 0
 
-        optimizer.zero_grad()
+            optimizer.zero_grad()
 
-        # Predict 3D poses
-        predicted_3d_pos = model_pos_train(inputs_2d)
-        loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+            # Predict 3D poses
+            predicted_3d_pos = model_pos_train(inputs_2d)
+            loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
 
-        epoch_loss_3d_train += inputs_3d.shape[0] * \
-            inputs_3d.shape[1] * loss_3d_pos.item()
-        N += inputs_3d.shape[0] * inputs_3d.shape[1]
+            epoch_loss_3d_train += inputs_3d.shape[0] * \
+                inputs_3d.shape[1] * loss_3d_pos.item()
+            N += inputs_3d.shape[0] * inputs_3d.shape[1]
 
-        loss_total = loss_3d_pos
-        loss_total.backward()
+            loss_total = loss_3d_pos
+            loss_total.backward()
 
-        optimizer.step()
+            optimizer.step()
+
+            bar()
 
     epoch_losses_eva = epoch_loss_3d_train / N
 
     return epoch_losses_eva
+
+
+def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
+    N = 0
+    epoch_loss_3d_valid = 0
+    epoch_loss_3d_train_eval = 0
+
+    with torch.no_grad():
+        model_pos.load_state_dict(model_train_dict)
+        model_pos.eval()
+
+        # Evaluate on test set
+        total_test = len(test_loader)
+        with alive_bar(total_test, title='Test ', spinner='flowers') as bar:
+            for cam, inputs_3d, inputs_2d in test_loader:
+                if torch.cuda.is_available():
+                    inputs_3d = inputs_3d.cuda()
+                    inputs_2d = inputs_2d.cuda()
+
+                inputs_3d[:, :, 0] = 0
+
+                # Predict 3D poses
+                predicted_3d_pos = model_pos(inputs_2d)
+                loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+                epoch_loss_3d_valid += inputs_3d.shape[0] * \
+                    inputs_3d.shape[1] * loss_3d_pos.item()
+                N += inputs_3d.shape[0] * inputs_3d.shape[1]
+
+                bar()
+
+        losses_3d_valid_ave = epoch_loss_3d_valid / N
+
+        # Evaluate on training set, this time in evaluation mode
+        N = 0
+        total_eval = len(train_loader_eval)
+        with alive_bar(total_eval, title='Eval ', spinner='flowers') as bar:
+            for cam, inputs_3d, inputs_2d in train_loader_eval:
+                if inputs_2d.shape[1] == 0:
+                    # This happens only when downsampling the dataset
+                    continue
+
+                if torch.cuda.is_available():
+                    inputs_3d = inputs_3d.cuda()
+                    inputs_2d = inputs_2d.cuda()
+
+                inputs_3d[:, :, 0] = 0
+
+                # Compute 3D poses
+                predicted_3d_pos = model_pos(inputs_2d)
+                loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+                epoch_loss_3d_train_eval += inputs_3d.shape[0] * \
+                    inputs_3d.shape[1] * loss_3d_pos.item()
+                N += inputs_3d.shape[0] * inputs_3d.shape[1]
+
+                bar()
+
+        losses_3d_train_eval_ave = epoch_loss_3d_train_eval / N
+
+    return losses_3d_valid_ave, losses_3d_train_eval_ave

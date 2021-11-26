@@ -3,14 +3,17 @@ from typing import Iterator
 from omegaconf import DictConfig, OmegaConf
 import hydra
 import os
+import sys
 import errno
 from time import time
 
+import numpy as np
 import torch
+from torch.utils.data import DataLoader
 
 from common.utils import summary
-from common.generators import UnchunkedGenerator, ChunkedGenerator
-from trainval import create_model, load_dataset, fetch, load_weight, train
+from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGeneratorDataset
+from trainval import create_model, load_dataset, fetch, load_weight, train, eval
 
 log = logging.getLogger('hpe-3d')
 
@@ -47,19 +50,15 @@ def main(cfg: DictConfig):
     if cfg.causal:
         log.info("Using causal convolutions")
 
-    # TODO
-    # if torch.cuda.is_available():
-    #     model_pos = model_pos.cuda()
-    #     model_pos_train = model_pos_train.cuda()
-
     # Loading weight
     model_pos_train, model_pos, checkpoint = load_weight(
         cfg, model_pos_train, model_pos)
 
-    test_generator = UnchunkedGenerator(cameras_valid, poses_valid, poses_valid_2d,
-                                        pad=pad, causal_shift=causal_shift, augment=False,
-                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
-    log.info("Testing on {} frames".format(test_generator.num_frames()))
+    test_dataset = UnchunkedGeneratorDataset(cameras_valid, poses_valid, poses_valid_2d,
+                                             pad=pad, causal_shift=causal_shift, augment=False,
+                                             kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
+    test_loader = DataLoader(test_dataset, 1, shuffle=False)
+    log.info("Testing on {} frames".format(test_dataset.num_frames()))
 
     if not cfg.evaluate:
         cameras_train, poses_train, poses_train_2d = fetch(subjects_train,  dataset, keypoints, action_filter,
@@ -77,26 +76,32 @@ def main(cfg: DictConfig):
         initial_momentum = 0.1
         final_momentum = 0.01
 
-        train_generator = ChunkedGenerator(cfg.batch_size // cfg.stride, cameras_train, poses_train, poses_train_2d,
-                                           cfg.stride,
-                                           pad=pad, causal_shift=causal_shift, shuffle=True, augment=cfg.data_augmentation,
-                                           kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
-                                           joints_right=joints_right)
-        train_generator_eval = UnchunkedGenerator(cameras_train, poses_train, poses_train_2d,
-                                                  pad=pad, causal_shift=causal_shift, augment=False)
+        train_dataset = ChunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
+                                                cfg.stride,
+                                                pad=pad, causal_shift=causal_shift, shuffle=True, augment=cfg.data_augmentation,
+                                                kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                                joints_right=joints_right)
+        train_loader = DataLoader(
+            train_dataset, cfg.batch_size, shuffle=True, num_workers=4)
+
+        train_dataset_eval = UnchunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
+                                                       pad=pad, causal_shift=causal_shift, augment=False)
+        train_loader_eval = DataLoader(train_dataset_eval, 1, shuffle=False)
+
         log.info('Training on {} frames'.format(
-            train_generator_eval.num_frames()))
-        _, _, sample_inputs_2d = next(
-            train_generator.next_epoch())
-        log.info('Input 2d shape: {}'.format(list(sample_inputs_2d.shape)))
+            train_dataset_eval.num_frames()))
+        _, _, sample_inputs_2d = train_dataset[0]
+        input_shape = [cfg.batch_size]
+        input_shape += list(sample_inputs_2d.shape)
+        log.info('Input 2d shape: {}'.format(
+            input_shape))
         summary(log, model_pos,
-                sample_inputs_2d.shape[1:], sample_inputs_2d.shape[0], device='cpu')
+                sample_inputs_2d.shape, cfg.batch_size, device='cpu')
 
         if cfg.resume:
             epoch = checkpoint['epoch']
             if 'optimizer' in checkpoint and checkpoint['optimizer'] is not None:
                 optimizer.load_state_dict(checkpoint['optimizer'])
-                train_generator.set_random_state(checkpoint['random_state'])
             else:
                 log.info(
                     'WARNING: this checkpoint does not contain an optimizer state. The optimizer will be reinitialized.')
@@ -109,6 +114,12 @@ def main(cfg: DictConfig):
             '** The final evaluation will be carried out after the last training epoch.')
 
         loss_min = 49.5
+
+        # TODO
+        if torch.cuda.is_available():
+            model_pos = model_pos.cuda()
+            model_pos_train = model_pos_train.cuda()
+
         # Pos model only
         while epoch < cfg.epochs:
             start_time = time()
@@ -116,8 +127,86 @@ def main(cfg: DictConfig):
             model_pos_train.train()
 
             # Regular supervised scenario
-            epoch_loss_3d = train(model_pos_train, train_generator, optimizer)
+            epoch_loss_3d = train(model_pos_train, train_loader, optimizer)
             losses_3d_train.append(epoch_loss_3d)
+
+            # After training an epoch, whether to evaluate the loss of the training and validation set
+            if not cfg.no_eval:
+                model_train_dict = model_pos_train.state_dict()
+                losses_3d_valid_ave, losses_3d_train_eval_ave = eval(
+                    model_train_dict, model_pos, test_loader, train_loader_eval)
+                losses_3d_valid.append(losses_3d_valid_ave)
+                losses_3d_train_eval.append(losses_3d_train_eval_ave)
+
+            elapsed = (time() - start_time) / 60
+
+            if cfg.no_eval:
+                log.info('[%d] time %.2f lr %f 3d_train %f' % (
+                    epoch + 1,
+                    elapsed,
+                    lr,
+                    losses_3d_train[-1] * 1000))
+            else:
+                log.info('[%d] time %.2f lr %f 3d_train %f 3d_eval %f 3d_valid %f' % (
+                    epoch + 1,
+                    elapsed,
+                    lr,
+                    losses_3d_train[-1] * 1000,
+                    losses_3d_train_eval[-1] * 1000,
+                    losses_3d_valid[-1] * 1000))
+
+                # Saving the best result
+                if losses_3d_valid[-1]*1000 < loss_min:
+                    chk_path = os.path.join(cfg.checkpoint, 'epoch_best.bin')
+                    log.info('Saving checkpoint to', chk_path)
+
+                    torch.save({
+                        'epoch': epoch,
+                        'lr': lr,
+                        'optimizer': optimizer.state_dict(),
+                        'model_pos': model_pos_train.state_dict()
+                    }, chk_path)
+
+                    loss_min = losses_3d_valid[-1]*1000
+
+            # Decay learning rate exponentially
+            lr *= lr_decay
+            for param_group in optimizer.param_groups:
+                param_group['lr'] *= lr_decay
+            epoch += 1
+
+            # Save checkpoint if necessary
+            if epoch % cfg.checkpoint_frequency == 0:
+                chk_path = os.path.join(
+                    cfg.checkpoint, 'epoch_{}.bin'.format(epoch))
+                log.info('Saving checkpoint to', chk_path)
+
+                torch.save({
+                    'epoch': epoch,
+                    'lr': lr,
+                    'optimizer': optimizer.state_dict(),
+                    'model_pos': model_pos_train.state_dict()
+                }, chk_path)
+
+            # Save training curves after every epoch, as .png images (if requested)
+            if cfg.export_training_curves and epoch > 3:
+                if 'matplotlib' not in sys.modules:
+                    import matplotlib
+
+                    matplotlib.use('Agg')
+                    import matplotlib.pyplot as plt
+
+                plt.figure()
+                epoch_x = np.arange(3, len(losses_3d_train)) + 1
+                plt.plot(epoch_x, losses_3d_train[3:], '--', color='C0')
+                plt.plot(epoch_x, losses_3d_train_eval[3:], color='C0')
+                plt.plot(epoch_x, losses_3d_valid[3:], color='C1')
+                plt.legend(['3d train', '3d train (eval)', '3d valid (eval)'])
+                plt.ylabel('MPJPE (m)')
+                plt.xlabel('Epoch')
+                plt.xlim((3, epoch))
+                plt.savefig(os.path.join(cfg.checkpoint, 'loss_3d.png'))
+                plt.close('all')
 
 
 if __name__ == '__main__':

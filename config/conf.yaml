@@ -1,7 +1,6 @@
 data_dir: "/home/wt/py_projects/HPE-3d/data/"
 checkpoint: "checkpoint"
 
-
 evaluate: false
 resume: ""
 
@@ -29,3 +28,6 @@ learning_rate: 0.001
 lr_decay: 0.95
 epochs: 60
 data_augmentation: false
+no_eval: false
+checkpoint_frequency: 10
+export_training_curves: true

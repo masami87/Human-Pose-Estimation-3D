@@ -5,10 +5,12 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+from abc import ABC
 import numpy as np
+
 from common.skeleton import Skeleton
 
-class MocapDataset:
+class MocapDataset(ABC):
     def __init__(self, fps, skeleton):
         self._skeleton = skeleton
         self._fps = fps
