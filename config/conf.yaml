@@ -27,7 +27,7 @@ stride: 1
 learning_rate: 0.001
 lr_decay: 0.95
 epochs: 60
-data_augmentation: false
+data_augmentation: true
 no_eval: false
 checkpoint_frequency: 10
 export_training_curves: true

@@ -164,7 +164,6 @@ class UnchunkedGeneratorDataset(Dataset):
         assert poses_3d is None or len(poses_3d) == len(poses_2d)
         assert cameras is None or len(cameras) == len(poses_2d)
 
-        self.augment = augment
         self.kps_left = kps_left
         self.kps_right = kps_right
         self.joints_left = joints_left
@@ -175,6 +174,13 @@ class UnchunkedGeneratorDataset(Dataset):
         self.cameras = [] if cameras is None else cameras
         self.poses_3d = [] if poses_3d is None else poses_3d
         self.poses_2d = poses_2d
+
+        self.aug_threash = len(self.poses_2d)
+
+        if augment:
+            self.poses_2d += self.poses_2d
+            self.cameras += self.cameras
+            self.poses_3d += self.poses_3d
 
     def num_frames(self):
         count = 0
@@ -199,25 +205,19 @@ class UnchunkedGeneratorDataset(Dataset):
                            ((self.pad + self.causal_shift, self.pad -
                              self.causal_shift), (0, 0), (0, 0)),
                            'edge')
-        if self.augment:
+        if index >= self.aug_threash:
             # Append flipped version
             if single_cam is not None:
-                flipped_cam = single_cam
-                flipped_cam[2] *= -1
-                flipped_cam[7] *= -1
-                single_cam = np.concatenate((single_cam, flipped_cam), axis=0)
+                single_cam[2] *= -1
+                single_cam[7] *= -1
 
             if single_3d is not None:
-                flipped_3d = single_3d
-                flipped_3d[:, :, 0] *= -1
-                flipped_3d[:, self.joints_left + self.joints_right] = flipped_3d[
+                single_3d[:, :, 0] *= -1
+                single_3d[:, self.joints_left + self.joints_right] = single_3d[
                     :, self.joints_right + self.joints_left]
-                single_3d = np.concatenate((single_3d, flipped_3d), axis=0)
 
-            flipped_2d = single_2d
-            flipped_2d[:, :, 0] *= -1
-            flipped_2d[:, self.kps_left + self.kps_right] = flipped_2d[
+            single_2d[:, :, 0] *= -1
+            single_2d[:, self.kps_left + self.kps_right] = single_2d[
                 :, self.kps_right + self.kps_left]
-            single_2d = np.concatenate((single_2d, flipped_2d), axis=0)
 
         return single_cam, single_3d, single_2d
