@@ -179,7 +179,7 @@ def load_weight(cfg, model_pos_train, model_pos):
     return model_pos_train, model_pos, checkpoint
 
 
-def train(model_pos_train, train_loader, optimizer):
+def train(accelerator,model_pos_train, train_loader, optimizer):
     epoch_loss_3d_train = 0
     N = 0
 
@@ -187,9 +187,6 @@ def train(model_pos_train, train_loader, optimizer):
     total = len(train_loader)
     with alive_bar(total, title='Train', spinner='elements') as bar:
         for _, inputs_3d, inputs_2d in train_loader:
-            if torch.cuda.is_available():
-                inputs_3d = inputs_3d.cuda()
-                inputs_2d = inputs_2d.cuda()
 
             # TODO
             inputs_3d[:, :, 0] = 0
@@ -205,7 +202,9 @@ def train(model_pos_train, train_loader, optimizer):
             N += inputs_3d.shape[0] * inputs_3d.shape[1]
 
             loss_total = loss_3d_pos
-            loss_total.backward()
+
+            # accelerator backward
+            accelerator.backward(loss_total)
 
             optimizer.step()
 
@@ -229,9 +228,6 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
         total_test = len(test_loader)
         with alive_bar(total_test, title='Test ', spinner='flowers') as bar:
             for cam, inputs_3d, inputs_2d in test_loader:
-                if torch.cuda.is_available():
-                    inputs_3d = inputs_3d.cuda()
-                    inputs_2d = inputs_2d.cuda()
 
                 inputs_3d[:, :, 0] = 0
 
@@ -254,10 +250,6 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
                 if inputs_2d.shape[1] == 0:
                     # This happens only when downsampling the dataset
                     continue
-
-                if torch.cuda.is_available():
-                    inputs_3d = inputs_3d.cuda()
-                    inputs_2d = inputs_2d.cuda()
 
                 inputs_3d[:, :, 0] = 0
 

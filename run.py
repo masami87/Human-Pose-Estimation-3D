@@ -10,6 +10,7 @@ from time import time
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from accelerate import Accelerator
 
 from common.utils import summary
 from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGeneratorDataset
@@ -46,7 +47,7 @@ def main(cfg: DictConfig):
     model_pos_train, model_pos, pad, causal_shift = create_model(
         cfg, dataset, poses_valid_2d)
     receptive_field = model_pos.receptive_field()
-    log.info(" Receptive field: {} frames".format(receptive_field))
+    log.info("Receptive field: {} frames".format(receptive_field))
     if cfg.causal:
         log.info("Using causal convolutions")
 
@@ -57,7 +58,8 @@ def main(cfg: DictConfig):
     test_dataset = UnchunkedGeneratorDataset(cameras_valid, poses_valid, poses_valid_2d,
                                              pad=pad, causal_shift=causal_shift, augment=False,
                                              kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
-    test_loader = DataLoader(test_dataset, 1, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=1,
+                             shuffle=False, num_workers=cfg.num_workers)
     log.info("Testing on {} frames".format(test_dataset.num_frames()))
 
     if not cfg.evaluate:
@@ -82,11 +84,12 @@ def main(cfg: DictConfig):
                                                 kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                                 joints_right=joints_right)
         train_loader = DataLoader(
-            train_dataset, cfg.batch_size, shuffle=True, num_workers=4)
+            train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
 
         train_dataset_eval = UnchunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
                                                        pad=pad, causal_shift=causal_shift, augment=False)
-        train_loader_eval = DataLoader(train_dataset_eval, cfg.num_workers, shuffle=False)
+        train_loader_eval = DataLoader(
+            train_dataset_eval, batch_size=1, shuffle=False, num_workers=cfg.num_workers)
 
         log.info('Training on {} frames'.format(
             train_dataset_eval.num_frames()))
@@ -113,12 +116,14 @@ def main(cfg: DictConfig):
         log.info(
             '** The final evaluation will be carried out after the last training epoch.')
 
-        loss_min = 49.5
+        # Prepare everything for gpu and fp16
+        accelerator = Accelerator(device_placement=True, fp16=cfg.fp16)
+        model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader = accelerator.prepare(
+            model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader)
 
-        # TODO
-        if torch.cuda.is_available():
-            model_pos = model_pos.cuda()
-            model_pos_train = model_pos_train.cuda()
+        log.info("Training on device: {}".format(accelerator.device))
+
+        loss_min = 49.5
 
         # Pos model only
         while epoch < cfg.epochs:
@@ -127,7 +132,8 @@ def main(cfg: DictConfig):
             model_pos_train.train()
 
             # Regular supervised scenario
-            epoch_loss_3d = train(model_pos_train, train_loader, optimizer)
+            epoch_loss_3d = train(
+                accelerator, model_pos_train, train_loader, optimizer)
             losses_3d_train.append(epoch_loss_3d)
 
             # After training an epoch, whether to evaluate the loss of the training and validation set
