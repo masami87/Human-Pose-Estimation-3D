@@ -10,11 +10,11 @@ subjects_test: "S9,S11"
 dataset: "h36m"
 keypoints: "cpn_ft_h36m_dbb"
 actions: "*"
-downsample: 5
+downsample: 1
 subset: 1
 
 # model
-architecture: "3,3,3"
+architecture: "3,3,3,3"
 channels: 1024
 dropout: 0.05
 causal: false
@@ -22,6 +22,7 @@ dense: false
 disable_optimizations: false
 
 # train
+num_workers: 4
 batch_size: 128
 stride: 1
 learning_rate: 0.001

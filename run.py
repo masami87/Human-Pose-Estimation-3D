@@ -86,7 +86,7 @@ def main(cfg: DictConfig):
 
         train_dataset_eval = UnchunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
                                                        pad=pad, causal_shift=causal_shift, augment=False)
-        train_loader_eval = DataLoader(train_dataset_eval, 1, shuffle=False)
+        train_loader_eval = DataLoader(train_dataset_eval, cfg.num_workers, shuffle=False)
 
         log.info('Training on {} frames'.format(
             train_dataset_eval.num_frames()))

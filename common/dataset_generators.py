@@ -49,18 +49,6 @@ class ChunkedGeneratorDataset(Dataset):
                 pairs += zip(np.repeat(i, len(bounds - 1)),
                              bounds[:-1], bounds[1:], ~augment_vector)
 
-        # Initialize buffers
-        if cameras is not None:
-            self.single_cam = np.empty((cameras[0].shape[-1]))
-        if poses_3d is not None:
-            self.single_3d = np.empty(
-                (chunk_length, poses_3d[0].shape[-2], poses_3d[0].shape[-1]))
-
-        self.single_2d = np.empty(
-            (chunk_length + 2*pad, poses_2d[0].shape[-2], poses_2d[0].shape[-1]))
-
-        # self.num_batches = (len(pairs) + batch_size - 1) // batch_size
-        # self.batch_size = batch_size
         self.pairs = pairs
         self.shuffle = shuffle
         self.pad = pad
@@ -98,15 +86,15 @@ class ChunkedGeneratorDataset(Dataset):
         pad_left_2d = low_2d - start_2d
         pad_right_2d = end_2d - high_2d
         if pad_left_2d != 0 or pad_right_2d != 0:
-            self.single_2d = np.pad(seq_2d[low_2d:high_2d], ((
+            single_2d = np.pad(seq_2d[low_2d:high_2d], ((
                 pad_left_2d, pad_right_2d), (0, 0), (0, 0)), 'edge')
         else:
-            self.single_2d = seq_2d[low_2d:high_2d]
+            single_2d = seq_2d[low_2d:high_2d].copy()
 
         if flip:
             # Flip 2D keypoints
-            self.single_2d[:, :, 0] *= -1
-            self.single_2d[:, self.kps_left + self.kps_right] = self.single_2d[
+            single_2d[:, :, 0] *= -1
+            single_2d[:, self.kps_left + self.kps_right] = single_2d[
                 :, self.kps_right + self.kps_left]
         # 3D poses
         if self.poses_3d is not None:
@@ -116,27 +104,25 @@ class ChunkedGeneratorDataset(Dataset):
             pad_left_3d = low_3d - start_3d
             pad_right_3d = end_3d - high_3d
             if pad_left_3d != 0 or pad_right_3d != 0:
-                self.single_3d = np.pad(seq_3d[low_3d:high_3d], ((
+                single_3d = np.pad(seq_3d[low_3d:high_3d], ((
                     pad_left_3d, pad_right_3d), (0, 0), (0, 0)), 'edge')
             else:
-                self.single_3d = seq_3d[low_3d:high_3d]
+                single_3d = seq_3d[low_3d:high_3d].copy()
 
             if flip:
                 # Flip 3D joints
-                self.single_3d[:, :, 0] *= -1
-                self.single_3d[:, self.joints_left + self.joints_right] = \
-                    self.single_3d[:,
+                single_3d[:, :, 0] *= -1
+                single_3d[:, self.joints_left + self.joints_right] = \
+                    single_3d[:,
                                    self.joints_right + self.joints_left]
         # Cameras
         if self.cameras is not None:
-            self.single_cam = self.cameras[seq_i]
+            single_cam = self.cameras[seq_i].copy()
             if flip:
                 # Flip horizontal distortion coefficients
-                self.single_cam[2] *= -1
-                self.single_cam[7] *= -1
-        single_cam = torch.from_numpy(self.single_cam.astype('float32'))
-        single_2d = torch.from_numpy(self.single_2d.astype('float32'))
-        single_3d = torch.from_numpy(self.single_3d.astype('float32'))
+                single_cam[2] *= -1
+                single_cam[7] *= -1
+
         return single_cam, single_3d, single_2d
 
 
@@ -198,7 +184,8 @@ class UnchunkedGeneratorDataset(Dataset):
         return len(self.poses_2d)
 
     def __getitem__(self, index):
-        seq_cam, seq_3d, seq_2d = self.cameras[index], self.poses_3d[index], self.poses_2d[index]
+        seq_cam, seq_3d, seq_2d = self.cameras[index].copy(
+        ), self.poses_3d[index].copy(), self.poses_2d[index].copy()
         single_cam = seq_cam
         single_3d = seq_3d
         single_2d = np.pad(seq_2d,
