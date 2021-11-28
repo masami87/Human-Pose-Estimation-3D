@@ -14,7 +14,7 @@ downsample: 1
 subset: 1
 
 # model
-architecture: "3,3,3,3"
+architecture: "3,3,3,3,3"
 channels: 1024
 dropout: 0.05
 causal: false
@@ -22,7 +22,7 @@ dense: false
 disable_optimizations: false
 
 # train
-fp16: false
+fp16: true
 num_workers: 4
 batch_size: 128
 stride: 1
