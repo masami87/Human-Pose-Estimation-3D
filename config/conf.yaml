@@ -1,7 +1,7 @@
 data_dir: "/home/wt/py_projects/HPE-3d/data/"
 checkpoint: "checkpoint"
 
-evaluate: false
+evaluate: ""
 resume: ""
 
 # data
@@ -33,3 +33,6 @@ data_augmentation: true
 no_eval: false
 checkpoint_frequency: 10
 export_training_curves: true
+
+# evaluate
+by_subject: false

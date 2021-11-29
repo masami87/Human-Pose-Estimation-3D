@@ -9,7 +9,7 @@ from alive_progress import alive_bar
 
 from common.camera import world_to_camera, normalize_screen_coordinates
 from common.utils import deterministic_random
-from common.loss import mpjpe
+from common.loss import mpjpe, p_mpjpe
 from model.VideoPose3D import TemporalModel, TemporalModelOptimized1f
 
 
@@ -179,7 +179,7 @@ def load_weight(cfg, model_pos_train, model_pos):
     return model_pos_train, model_pos, checkpoint
 
 
-def train(accelerator,model_pos_train, train_loader, optimizer):
+def train(accelerator, model_pos_train, train_loader, optimizer):
     epoch_loss_3d_train = 0
     N = 0
 
@@ -265,3 +265,88 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
         losses_3d_train_eval_ave = epoch_loss_3d_train_eval / N
 
     return losses_3d_valid_ave, losses_3d_train_eval_ave
+
+
+def prepare_actions(subjects_test, dataset):
+    all_actions = {}
+    all_actions_by_subject = {}
+    for subject in subjects_test:
+        if subject not in all_actions_by_subject:
+            all_actions_by_subject[subject] = {}
+
+        for action in dataset[subject].keys():
+            action_name = action.split(' ')[0]
+            if action_name not in all_actions:
+                all_actions[action_name] = []
+            if action_name not in all_actions_by_subject[subject]:
+                all_actions_by_subject[subject][action_name] = []
+            all_actions[action_name].append((subject, action))
+            all_actions_by_subject[subject][action_name].append(
+                (subject, action))
+    return all_actions, all_actions_by_subject
+
+
+def fetch_actions(actions, keypoints, dataset, downsample=1):
+    out_poses_3d = []
+    out_poses_2d = []
+
+    for subject, action in actions:
+        poses_2d = keypoints[subject][action]
+        for i in range(len(poses_2d)):  # Iterate across camera
+            out_poses_2d.append(poses_2d[i])
+
+        poses_3d = dataset[subject][action]['positions_3d']
+        assert len(poses_3d) == len(poses_2d), 'Camera count mismatch'
+        for i in range(len(poses_3d)):  # Iterate across cameras
+            out_poses_3d.append(poses_3d[i])
+
+    stride = downsample
+    if stride > 1:
+        # Downsample as requested
+        for i in range(len(out_poses_2d)):
+            out_poses_2d[i] = out_poses_2d[i][::stride]
+            if out_poses_3d is not None:
+                out_poses_3d[i] = out_poses_3d[i][::stride]
+
+    return out_poses_3d, out_poses_2d
+
+
+def evaluate(test_loader, model_pos, action=None, log=None):
+    epoch_loss_3d_pos = 0
+    epoch_loss_3d_pos_procrustes = 0
+    with torch.no_grad():
+        model_pos.eval()
+        N = 0
+        for inputs_3d, inputs_2d in test_loader:
+
+            # Positional model
+            predicted_3d_pos = model_pos(inputs_2d)
+
+            error = mpjpe(predicted_3d_pos, inputs_3d)
+
+            epoch_loss_3d_pos += inputs_3d.shape[0] * \
+                inputs_3d.shape[1] * error.item()
+            N += inputs_3d.shape[0] * inputs_3d.shape[1]
+
+            inputs = inputs_3d.cpu().numpy().reshape(-1,
+                                                     inputs_3d.shape[-2], inputs_3d.shape[-1])
+            predicted_3d_pos = predicted_3d_pos.cpu().numpy(
+            ).reshape(-1, inputs_3d.shape[-2], inputs_3d.shape[-1])
+
+            epoch_loss_3d_pos_procrustes += inputs_3d.shape[0] * \
+                inputs_3d.shape[1] * p_mpjpe(predicted_3d_pos, inputs)
+
+    e1 = (epoch_loss_3d_pos / N) * 1000
+    e2 = (epoch_loss_3d_pos_procrustes / N) * 1000
+
+    if log is not None:
+        if action is None:
+            log.info('----------')
+        else:
+            log.info('----{}----'.format(action))
+
+        log.info('Protocol #1 Error (MPJPE): {} mm'.format(e1))
+        log.info('Protocol #2 Error (P-MPJPE): {} mm'.format(e2))
+        log.info('----------')
+
+    return e1, e2

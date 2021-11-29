@@ -114,7 +114,7 @@ class ChunkedGeneratorDataset(Dataset):
                 single_3d[:, :, 0] *= -1
                 single_3d[:, self.joints_left + self.joints_right] = \
                     single_3d[:,
-                                   self.joints_right + self.joints_left]
+                              self.joints_right + self.joints_left]
         # Cameras
         if self.cameras is not None:
             single_cam = self.cameras[seq_i].copy()
@@ -123,7 +123,11 @@ class ChunkedGeneratorDataset(Dataset):
                 single_cam[2] *= -1
                 single_cam[7] *= -1
 
-        return single_cam, single_3d, single_2d
+        if self.cameras is not None and self.poses_3d is not None:
+            return single_cam, single_3d, single_2d
+        elif self.poses_3d is not None:
+            return single_3d, single_2d
+        return single_2d
 
 
 class UnchunkedGeneratorDataset(Dataset):
@@ -184,10 +188,11 @@ class UnchunkedGeneratorDataset(Dataset):
         return len(self.poses_2d)
 
     def __getitem__(self, index):
-        seq_cam, seq_3d, seq_2d = self.cameras[index].copy(
-        ), self.poses_3d[index].copy(), self.poses_2d[index].copy()
-        single_cam = seq_cam
-        single_3d = seq_3d
+        single_cam = self.cameras[index].copy() if len(
+            self.cameras) > 0 else None
+        single_3d = self.poses_3d[index].copy() if len(
+            self.poses_3d) > 0 else None
+        seq_2d = self.poses_2d[index].copy()
         single_2d = np.pad(seq_2d,
                            ((self.pad + self.causal_shift, self.pad -
                              self.causal_shift), (0, 0), (0, 0)),
@@ -207,4 +212,8 @@ class UnchunkedGeneratorDataset(Dataset):
             single_2d[:, self.kps_left + self.kps_right] = single_2d[
                 :, self.kps_right + self.kps_left]
 
-        return single_cam, single_3d, single_2d
+        if single_cam is not None and single_3d is not None:
+            return single_cam, single_3d, single_2d
+        elif single_3d is not None:
+            return single_3d, single_2d
+        return single_2d

@@ -14,7 +14,7 @@ from accelerate import Accelerator
 
 from common.utils import summary
 from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGeneratorDataset
-from trainval import create_model, load_dataset, fetch, load_weight, train, eval
+from trainval import create_model, load_dataset, fetch, load_weight, train, eval, prepare_actions, fetch_actions, evaluate
 
 log = logging.getLogger('hpe-3d')
 
@@ -22,6 +22,11 @@ log = logging.getLogger('hpe-3d')
 @hydra.main(config_path="config/", config_name="conf")
 def main(cfg: DictConfig):
     log.info('Config:\n' + OmegaConf.to_yaml(cfg))
+
+    if cfg.resume and cfg.evaluate:
+        log.error(
+            'Invlid Config: resume and evaluate can not be set at the same time')
+        exit(-1)
 
     try:
         # Create checkpoint directory if it does not exist
@@ -213,6 +218,51 @@ def main(cfg: DictConfig):
                 plt.xlim((3, epoch))
                 plt.savefig(os.path.join(cfg.checkpoint, 'loss_3d.png'))
                 plt.close('all')
+    # Evaluate
+    log.info('Evaluating...')
+
+    all_actions, all_actions_by_subject = prepare_actions(
+        subjects_test, dataset)
+
+    def run_evaluation(actions, action_filter):
+        errors_p1 = []
+        errors_p2 = []
+
+        for action_key in actions.keys():
+            if action_filter is not None:
+                found = False
+                for a in action_filter:
+                    if action_key.startswith(a):
+                        found = True
+                        break
+                if not found:
+                    continue
+
+            poses_act, poses_2d_act = fetch_actions(
+                actions[action_key], keypoints, dataset, cfg.downsample)
+            _dataset = UnchunkedGeneratorDataset(None, poses_act, poses_2d_act,
+                                                 pad=pad, causal_shift=causal_shift, augment=False)
+            action_loader = DataLoader(_dataset, 1, shuffle=False)
+            action_loader = accelerator.prepare_data_loader(action_loader)
+
+            e1, e2 = evaluate(action_loader, model_pos,
+                              action=action_key, log=log)
+            errors_p1.append(e1)
+            errors_p2.append(e2)
+
+        log.info('Protocol #1   (MPJPE) action-wise average: {} mm'.format(
+                 round(np.mean(errors_p1), 1)))
+        log.info('Protocol #2 (P-MPJPE) action-wise average: {} mm'.format(
+                 round(np.mean(errors_p2), 1)))
+
+    if not cfg.by_subject:
+        run_evaluation(all_actions, action_filter)
+    else:
+        for subject in all_actions_by_subject.keys():
+            log.info('Evaluating on subject: {}'.format(subject))
+
+            run_evaluation(all_actions_by_subject[subject], action_filter)
+            log.info('')
 
 
 if __name__ == '__main__':
