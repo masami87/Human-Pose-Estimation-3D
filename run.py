@@ -164,7 +164,7 @@ def main(cfg: DictConfig):
                 # Saving the best result
                 if losses_3d_valid[-1]*1000 < loss_min:
                     chk_path = os.path.join(cfg.checkpoint, 'epoch_best.bin')
-                    log.info('Saving checkpoint to', chk_path)
+                    log.info('Saving checkpoint to {}'.format(chk_path))
 
                     torch.save({
                         'epoch': epoch,
@@ -185,7 +185,7 @@ def main(cfg: DictConfig):
             if epoch % cfg.checkpoint_frequency == 0:
                 chk_path = os.path.join(
                     cfg.checkpoint, 'epoch_{}.bin'.format(epoch))
-                log.info('Saving checkpoint to', chk_path)
+                log.info('Saving checkpoint to {}'.format(chk_path))
 
                 torch.save({
                     'epoch': epoch,
