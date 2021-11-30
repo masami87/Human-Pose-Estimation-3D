@@ -26,6 +26,7 @@ def image_coordinates(X, w, h):
     
 
 def world_to_camera(X, R, t):
+    # TODO
     Rt = wrap(qinverse, R) # Invert rotation
     return wrap(qrot, np.tile(Rt, (*X.shape[:-1], 1)), X - t) # Rotate and translate
 

@@ -10,7 +10,7 @@ __pycache__/
 checkpoint/
 
 # ignore data
-data/
+*.npz
 
 # ignore vecode
 .vscode/
