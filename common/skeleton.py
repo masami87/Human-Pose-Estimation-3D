@@ -37,6 +37,7 @@ class Skeleton:
             if joint not in joints_to_remove:
                 valid_joints.append(joint)
 
+        # if the parent of a joint is to_remove, change the parent to parent of parent.
         for i in range(len(self._parents)):
             while self._parents[i] in joints_to_remove:
                 self._parents[i] = self._parents[self._parents[i]]

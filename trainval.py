@@ -318,6 +318,7 @@ def evaluate(test_loader, model_pos, action=None, log=None):
         model_pos.eval()
         N = 0
         for inputs_3d, inputs_2d in test_loader:
+            inputs_3d[:, :, 0] = 0
 
             # Positional model
             predicted_3d_pos = model_pos(inputs_2d)
