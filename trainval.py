@@ -351,3 +351,14 @@ def evaluate(test_loader, model_pos, action=None, log=None):
         log.info('----------')
 
     return e1, e2
+
+
+def predict(test_generator, model_pos):
+    with torch.no_grad():
+        model_pos.eval()
+        _, _, batch_2d = next(test_generator.next_epoch())
+        inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+        if torch.cuda.is_available():
+            inputs_2d = inputs_2d.cuda()
+        predicted_3d_pos = model_pos(inputs_2d)
+    return predicted_3d_pos.squeeze(0).cpu().numpy()
