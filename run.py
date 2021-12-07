@@ -133,7 +133,6 @@ def main(cfg: DictConfig):
         # Pos model only
         while epoch < cfg.epochs:
             start_time = time()
-            epoch_loss_3d_train = 0
             model_pos_train.train()
 
             # Regular supervised scenario
@@ -185,6 +184,10 @@ def main(cfg: DictConfig):
             for param_group in optimizer.param_groups:
                 param_group['lr'] *= lr_decay
             epoch += 1
+
+            # Decay BatchNorm momentum
+            momentum = initial_momentum * np.exp(-epoch/cfg.epochs * np.log(initial_momentum/final_momentum))
+            model_pos_train.set_bn_momentum(momentum)
 
             # Save checkpoint if necessary
             if epoch % cfg.checkpoint_frequency == 0:

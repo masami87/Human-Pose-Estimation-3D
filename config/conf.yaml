@@ -16,7 +16,7 @@ subset: 1
 # model
 architecture: "3,3,3,3"
 channels: 1024
-dropout: 0.05
+dropout: 0.25
 causal: false
 dense: false
 disable_optimizations: false

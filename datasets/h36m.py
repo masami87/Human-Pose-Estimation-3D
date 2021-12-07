@@ -17,6 +17,27 @@ h36m_skeleton = Skeleton(parents=[-1,  0,  1,  2,  3,  4,  0,  6,  7,  8,  9,  0
                                       17, 18, 19, 20, 21, 22, 23],
                          joints_right=[1, 2, 3, 4, 5, 24, 25, 26, 27, 28, 29, 30, 31])
 
+# Joints in H3.6M -- data has 32 joints, but only 17 retained; these are the indices.
+H36M_NAMES = [''] * 32
+H36M_NAMES[0] = 'Hip'
+H36M_NAMES[1] = 'RHip'
+H36M_NAMES[2] = 'RKnee'
+H36M_NAMES[3] = 'RAnkle'
+H36M_NAMES[6] = 'LHip'
+H36M_NAMES[7] = 'LKnee'
+H36M_NAMES[8] = 'LAnkle'
+H36M_NAMES[12] = 'Spine'
+H36M_NAMES[13] = 'Thorax'
+H36M_NAMES[14] = 'Neck/Nose'
+H36M_NAMES[15] = 'Head'
+H36M_NAMES[17] = 'LShoulder'
+H36M_NAMES[18] = 'LElbow'
+H36M_NAMES[19] = 'LWrist'
+H36M_NAMES[25] = 'RShoulder'
+H36M_NAMES[26] = 'RElbow'
+H36M_NAMES[27] = 'RWrist'
+
+
 h36m_cameras_intrinsic_params = [
     {
         'id': '54138969',
@@ -210,8 +231,8 @@ h36m_cameras_extrinsic_params = {
 
 class Human36mDataset(MocapDataset):
     def __init__(self, path, remove_static_joints=True):
-        super().__init__(fps=50, skeleton=h36m_skeleton)
-
+        super().__init__(fps=50, skeleton=copy.deepcopy(h36m_skeleton))
+        print('Preparing Human36mDataset...')
         self._cameras = copy.deepcopy(h36m_cameras_extrinsic_params)
         for cameras in self._cameras.values():
             for i, cam in enumerate(cameras):
@@ -223,7 +244,8 @@ class Human36mDataset(MocapDataset):
                 # Normalize camera frame
                 cam['center'] = normalize_screen_coordinates(
                     cam['center'], w=cam['res_w'], h=cam['res_h']).astype('float32')
-                cam['focal_length'] = cam['focal_length']/cam['res_w']*2 # TODO?
+                cam['focal_length'] = cam['focal_length'] / \
+                    cam['res_w']*2  # TODO?
                 if 'translation' in cam:
                     cam['translation'] = cam['translation'] / \
                         1000  # mm to meters
