@@ -37,6 +37,8 @@ H36M_NAMES[25] = 'RShoulder'
 H36M_NAMES[26] = 'RElbow'
 H36M_NAMES[27] = 'RWrist'
 
+h36m_remove_list = [4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31]
+
 
 h36m_cameras_intrinsic_params = [
     {
@@ -270,8 +272,8 @@ class Human36mDataset(MocapDataset):
 
         if remove_static_joints:
             # Bring the skeleton to 17 joints instead of the original 32
-            self.remove_joints(
-                [4, 5, 9, 10, 11, 16, 20, 21, 22, 23, 24, 28, 29, 30, 31])
+            self.remove_joints(h36m_remove_list
+                )
 
             # Rewire shoulders to the correct parents
             self._skeleton._parents[11] = 8
