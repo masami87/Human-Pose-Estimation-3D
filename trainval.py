@@ -82,6 +82,70 @@ def load_dataset(data_dir: str, dataset_type: str, keypoints_type: str):
                 keypoints[subject][action][cam_idx] = kps
     return dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right
 
+def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str):
+    print('Loading dataset...')
+    dataset_path = data_dir + 'data_3d_' + dataset_type + '.npz'
+
+    if dataset_type == "ntu":
+        from datasets.ntu_rgbd import NTU_RGBD
+        dataset = NTU_RGBD(dataset_path)
+    else:
+        raise KeyError('Invalid dataset')
+
+    print('Preparing data NTU')
+    for subject in dataset.subjects():
+        for action in dataset[subject].keys():
+            anim = dataset[subject][action]
+            positions_3d = []
+            for cam in anim.keys():
+                for seg in anim[cam].keys():
+                    pos_3d = anim[cam][seg]
+                    pos_3d[:,1:] -= pos_3d[:,:1]
+                    positions_3d.append(pos_3d)
+            anim['positions_3d'] = positions_3d
+
+
+    print('Loading 2D detections...')
+    keypoints = np.load(data_dir + 'data_2d_' + dataset_type +
+                        '_' + keypoints_type + '.npz', allow_pickle=True)
+    # keypoints_metadata = keypoints['metadata'].item()
+    # keypoints_metadata = keypoints_metadata['keypoints_symmetry']
+    kps_left, kps_right = list(dataset.skeleton().joints_left()), list(
+        dataset.skeleton().joints_right())
+    keypoints_metadata = [kps_left,kps_right] # not use
+    joints_left, joints_right = list(dataset.skeleton().joints_left()), list(
+        dataset.skeleton().joints_right())
+    keypoints = keypoints['positions_2d'].item()
+
+    valid_indexes = dataset.valid_indexes()
+
+    for subject in dataset.subjects():
+        assert subject in keypoints, 'Subject {} is missing from the 2D detections dataset'.format(
+            subject)
+        for action in dataset[subject].keys():
+            assert action in keypoints[subject], 'Action {} of subject {} is missing from the 2D detections dataset'.format(
+                action, subject)
+            if 'positions_3d' not in dataset[subject][action]:
+                continue
+            
+            keypoints_2d = []
+            for cam in keypoints[subject][action].keys():
+                for seg in keypoints[subject][action][cam].keys():
+                    kpt_2d = keypoints[subject][action][cam][seg][:,valid_indexes]
+                    keypoints_2d.append(kpt_2d)
+
+            keypoints[subject][action] = keypoints_2d
+            assert len(keypoints[subject][action]) == len(
+                dataset[subject][action]['positions_3d'])
+
+    for subject in keypoints.keys():
+        for action in keypoints[subject]:
+            for seg_idx, kps in enumerate(keypoints[subject][action]):
+                # Normalize camera frame
+                kps[..., :2] = normalize_screen_coordinates(
+                    kps[..., :2], w=1920, h=1080)
+                keypoints[subject][action][seg_idx] = kps
+    return dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right
 
 def fetch(subjects, dataset, keypoints, action_filter=None, downsample=5, subset=1, parse_3d_poses=True):
     out_poses_3d = []
@@ -137,6 +201,52 @@ def fetch(subjects, dataset, keypoints, action_filter=None, downsample=5, subset
                 out_poses_3d[i] = out_poses_3d[i][::stride]
     return out_camera_params, out_poses_3d, out_poses_2d
 
+def fetch_ntu(subjects, dataset, keypoints, action_filter=None, downsample=5, subset=1, parse_3d_poses=True):
+    out_poses_3d = []
+    out_poses_2d = []
+    out_camera_params = []
+    for subject in subjects:
+        for action in keypoints[subject].keys():
+            if action_filter is not None:
+                found = False
+                for a in action_filter:
+                    if action.startswith(a):
+                        found = True
+                        break
+                if not found:
+                    continue
+
+            poses_2d = keypoints[subject][action]
+            for i in range(len(poses_2d)):  # Iterate across segs
+                out_poses_2d.append(poses_2d[i])
+
+            if parse_3d_poses and 'positions_3d' in dataset[subject][action]:
+                poses_3d = dataset[subject][action]['positions_3d']
+                assert len(poses_3d) == len(poses_2d), 'seg count mismatch'
+                for i in range(len(poses_3d)):  # Iterate across cameras
+                    out_poses_3d.append(poses_3d[i])
+
+    if len(out_camera_params) == 0:
+        out_camera_params = None
+    if len(out_poses_3d) == 0:
+        out_poses_3d = None
+
+    stride = downsample
+    if subset < 1:
+        for i in range(len(out_poses_2d)):
+            n_frames = int(round(len(out_poses_2d[i])//stride * subset)*stride)
+            start = deterministic_random(
+                0, len(out_poses_2d[i]) - n_frames + 1, str(len(out_poses_2d[i])))
+            out_poses_2d[i] = out_poses_2d[i][start:start+n_frames:stride]
+            if out_poses_3d is not None:
+                out_poses_3d[i] = out_poses_3d[i][start:start+n_frames:stride]
+    elif stride > 1:
+        # Downsample as requested
+        for i in range(len(out_poses_2d)):
+            out_poses_2d[i] = out_poses_2d[i][::stride]
+            if out_poses_3d is not None:
+                out_poses_3d[i] = out_poses_3d[i][::stride]
+    return out_camera_params, out_poses_3d, out_poses_2d
 
 def create_model(cfg, dataset, poses_valid_2d):
     filter_widths = [int(x) for x in cfg.architecture.split(",")]
@@ -186,9 +296,8 @@ def train(accelerator, model_pos_train, train_loader, optimizer):
     # TODO dataloader and tqdm
     total = len(train_loader)
     with alive_bar(total, title='Train', spinner='elements') as bar:
-        for _, inputs_3d, inputs_2d in train_loader:
-
-            # TODO
+        for batch_data in train_loader:
+            inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
             inputs_3d[:, :, 0] = 0
 
             optimizer.zero_grad()
@@ -227,7 +336,8 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
         # Evaluate on test set
         total_test = len(test_loader)
         with alive_bar(total_test, title='Test ', spinner='flowers') as bar:
-            for cam, inputs_3d, inputs_2d in test_loader:
+            for batch_data in test_loader:
+                inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
 
                 inputs_3d[:, :, 0] = 0
 
@@ -246,7 +356,8 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
         N = 0
         total_eval = len(train_loader_eval)
         with alive_bar(total_eval, title='Eval ', spinner='flowers') as bar:
-            for cam, inputs_3d, inputs_2d in train_loader_eval:
+            for batch_data in train_loader_eval:
+                inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
                 if inputs_2d.shape[1] == 0:
                     # This happens only when downsampling the dataset
                     continue
@@ -317,7 +428,8 @@ def evaluate(test_loader, model_pos, action=None, log=None):
     with torch.no_grad():
         model_pos.eval()
         N = 0
-        for inputs_3d, inputs_2d in test_loader:
+        for batch_data in test_loader:
+            inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
             inputs_3d[:, :, 0] = 0
 
             # Positional model
@@ -356,7 +468,7 @@ def evaluate(test_loader, model_pos, action=None, log=None):
 def predict(test_generator, model_pos):
     with torch.no_grad():
         model_pos.eval()
-        _, _, batch_2d = next(test_generator.next_epoch())
+        batch_2d = next(test_generator.next_epoch())[-1]
         inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
         if torch.cuda.is_available():
             inputs_2d = inputs_2d.cuda()

@@ -14,7 +14,7 @@ from accelerate import Accelerator
 
 from common.utils import summary
 from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGeneratorDataset
-from trainval import create_model, load_dataset, fetch, load_weight, train, eval, prepare_actions, fetch_actions, evaluate
+from trainval import create_model, fetch_ntu, load_dataset, fetch, load_dataset_ntu, load_weight, train, eval, prepare_actions, fetch_actions, evaluate
 
 log = logging.getLogger('hpe-3d')
 
@@ -35,8 +35,11 @@ def main(cfg: DictConfig):
         if e.errno != errno.EEXIST:
             raise RuntimeError(
                 'Unable to create checkpoint directory:', cfg.checkpoint)
-
-    dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset(cfg.data_dir,
+    if cfg.dataset == 'ntu':
+        dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
+                                                                                                          cfg.dataset, cfg.keypoints)
+    else:
+        dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset(cfg.data_dir,
                                                                                                           cfg.dataset, cfg.keypoints)
 
     subjects_train = cfg.subjects_train.split(',')
@@ -45,9 +48,12 @@ def main(cfg: DictConfig):
     action_filter = None if cfg.actions == '*' else cfg.actions.split(',')
     if action_filter is not None:
         log.info('Selected actions:', action_filter)
-
-    cameras_valid, poses_valid, poses_valid_2d = fetch(
+    if cfg.dataset == 'ntu':
+        cameras_valid, poses_valid, poses_valid_2d = fetch_ntu(
         subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
+    else:
+        cameras_valid, poses_valid, poses_valid_2d = fetch(
+            subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
 
     model_pos_train, model_pos, pad, causal_shift = create_model(
         cfg, dataset, poses_valid_2d)
@@ -68,8 +74,12 @@ def main(cfg: DictConfig):
     log.info("Testing on {} frames".format(test_dataset.num_frames()))
 
     if not cfg.evaluate:
-        cameras_train, poses_train, poses_train_2d = fetch(subjects_train,  dataset, keypoints, action_filter,
+        if cfg.dataset == 'ntu':
+            cameras_train, poses_train, poses_train_2d = fetch_ntu(subjects_train,  dataset, keypoints, action_filter,
                                                            cfg.downsample, subset=cfg.subset)
+        else:
+            cameras_train, poses_train, poses_train_2d = fetch(subjects_train,  dataset, keypoints, action_filter,
+                                                            cfg.downsample, subset=cfg.subset)
         lr = cfg.learning_rate
         optimizer = torch.optim.Adam(
             model_pos_train.parameters(), lr=lr, amsgrad=True)
@@ -98,7 +108,7 @@ def main(cfg: DictConfig):
 
         log.info('Training on {} frames'.format(
             train_dataset_eval.num_frames()))
-        _, _, sample_inputs_2d = train_dataset[0]
+        sample_inputs_2d = train_dataset[0][-1]
         input_shape = [cfg.batch_size]
         input_shape += list(sample_inputs_2d.shape)
         log.info('Input 2d shape: {}'.format(

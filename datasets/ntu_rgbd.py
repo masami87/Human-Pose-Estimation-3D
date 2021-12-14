@@ -43,13 +43,13 @@ class NTU_RGBD(MocapDataset):
         self._data = np.load(path, allow_pickle=True)['positions_3d'].item()
 
         if remove_static_joints:
-            # Bring the skeleton to 16 joints instead of the original 25
-            self.remove_joints_better()
+            # Bring the skeleton to 17 joints instead of the original 25
+            self.remove_joints_better(valid_joints=valid_joints)
 
     def supports_semi_supervised(self):
         return True
 
-    def valid_joints(self):
+    def valid_indexes(self):
         return self.valid_joints
 
     def remove_joints_better(self, valid_joints):
@@ -59,6 +59,5 @@ class NTU_RGBD(MocapDataset):
                 for cam in self._data[subject][action].keys():
                     for seg in self._data[subject][action][cam].keys():
                         s = self._data[subject][action][cam][seg]
-                        assert(s.shape[1] == len(valid_joints))
-                        self._data[subject][action][cam][seg] = s[valid_indexes]
-        self.valid_joints = valid_joints
+                        self._data[subject][action][cam][seg] = s[:, valid_indexes]
+        self.valid_joints = valid_indexes
