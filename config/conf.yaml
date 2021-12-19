@@ -14,6 +14,7 @@ subjects_train: "S001,S002"
 subjects_test: "S003"
 dataset: "ntu"
 keypoints: "gt"
+depth_map: false
 
 actions: "*"
 downsample: 1

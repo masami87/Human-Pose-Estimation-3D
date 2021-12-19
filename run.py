@@ -28,6 +28,10 @@ def main(cfg: DictConfig):
             'Invlid Config: resume and evaluate can not be set at the same time')
         exit(-1)
 
+    if cfg.dataset != 'ntu' and cfg.depth_map:
+        log.error('Cannot use depth map when not using ntu dataset')
+        exit(-1)
+
     try:
         # Create checkpoint directory if it does not exist
         os.makedirs(cfg.checkpoint)
@@ -37,10 +41,10 @@ def main(cfg: DictConfig):
                 'Unable to create checkpoint directory:', cfg.checkpoint)
     if cfg.dataset == 'ntu':
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
-                                                                                                          cfg.dataset, cfg.keypoints)
+                                                                                                                  cfg.dataset, cfg.keypoints)
     else:
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset(cfg.data_dir,
-                                                                                                          cfg.dataset, cfg.keypoints)
+                                                                                                              cfg.dataset, cfg.keypoints)
 
     subjects_train = cfg.subjects_train.split(',')
     subjects_test = cfg.subjects_test.split(',')
@@ -50,7 +54,7 @@ def main(cfg: DictConfig):
         log.info('Selected actions:', action_filter)
     if cfg.dataset == 'ntu':
         cameras_valid, poses_valid, poses_valid_2d = fetch_ntu(
-        subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
+            subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
     else:
         cameras_valid, poses_valid, poses_valid_2d = fetch(
             subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
@@ -76,10 +80,10 @@ def main(cfg: DictConfig):
     if not cfg.evaluate:
         if cfg.dataset == 'ntu':
             cameras_train, poses_train, poses_train_2d = fetch_ntu(subjects_train,  dataset, keypoints, action_filter,
-                                                           cfg.downsample, subset=cfg.subset)
+                                                                   cfg.downsample, subset=cfg.subset)
         else:
             cameras_train, poses_train, poses_train_2d = fetch(subjects_train,  dataset, keypoints, action_filter,
-                                                            cfg.downsample, subset=cfg.subset)
+                                                               cfg.downsample, subset=cfg.subset)
         lr = cfg.learning_rate
         optimizer = torch.optim.Adam(
             model_pos_train.parameters(), lr=lr, amsgrad=True)
@@ -196,7 +200,9 @@ def main(cfg: DictConfig):
             epoch += 1
 
             # Decay BatchNorm momentum
-            momentum = initial_momentum * np.exp(-epoch/cfg.epochs * np.log(initial_momentum/final_momentum))
+            momentum = initial_momentum * \
+                np.exp(-epoch/cfg.epochs *
+                       np.log(initial_momentum/final_momentum))
             model_pos_train.set_bn_momentum(momentum)
 
             # Save checkpoint if necessary
