@@ -82,7 +82,8 @@ def load_dataset(data_dir: str, dataset_type: str, keypoints_type: str):
                 keypoints[subject][action][cam_idx] = kps
     return dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right
 
-def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str):
+
+def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_depth: bool):
     print('Loading dataset...')
     dataset_path = data_dir + 'data_3d_' + dataset_type + '.npz'
 
@@ -100,22 +101,28 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str):
             for cam in anim.keys():
                 for seg in anim[cam].keys():
                     pos_3d = anim[cam][seg]
-                    pos_3d[:,1:] -= pos_3d[:,:1]
+                    pos_3d[:, 1:] -= pos_3d[:, :1]
                     positions_3d.append(pos_3d)
             anim['positions_3d'] = positions_3d
 
-
     print('Loading 2D detections...')
+
     keypoints = np.load(data_dir + 'data_2d_' + dataset_type +
                         '_' + keypoints_type + '.npz', allow_pickle=True)
     # keypoints_metadata = keypoints['metadata'].item()
     # keypoints_metadata = keypoints_metadata['keypoints_symmetry']
     kps_left, kps_right = list(dataset.skeleton().joints_left()), list(
         dataset.skeleton().joints_right())
-    keypoints_metadata = [kps_left,kps_right] # not use
+    keypoints_metadata = [kps_left, kps_right]  # not use
     joints_left, joints_right = list(dataset.skeleton().joints_left()), list(
         dataset.skeleton().joints_right())
     keypoints = keypoints['positions_2d'].item()
+
+    if use_depth:
+        print("Loading depth vec...")
+        depth_vecs = np.load(data_dir+'data_dep'+'_'+dataset_type
+                             + '.npz', allow_pickle=True)
+        depth_vecs = depth_vecs['depths'].item()
 
     valid_indexes = dataset.valid_indexes()
 
@@ -127,11 +134,17 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str):
                 action, subject)
             if 'positions_3d' not in dataset[subject][action]:
                 continue
-            
+
             keypoints_2d = []
             for cam in keypoints[subject][action].keys():
                 for seg in keypoints[subject][action][cam].keys():
-                    kpt_2d = keypoints[subject][action][cam][seg][:,valid_indexes]
+                    kpt_2d = keypoints[subject][action][cam][seg][:,
+                                                                  valid_indexes]
+                    if use_depth:
+                        d_vec = depth_vecs[subject][action][cam][seg][:,
+                                                                      valid_indexes]
+                        kpt_2d = np.concatenate((kpt_2d, d_vec), -1)
+                        assert kpt_2d.shape[-1] == 3
                     keypoints_2d.append(kpt_2d)
 
             keypoints[subject][action] = keypoints_2d
@@ -144,8 +157,15 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str):
                 # Normalize camera frame
                 kps[..., :2] = normalize_screen_coordinates(
                     kps[..., :2], w=1920, h=1080)
+                if use_depth:
+                    assert kpt_2d.shape[-1] == 3, "No depth dimentions with tensor shape: {}".format(
+                        kps.shape)
+                    kps[..., 2] = kps[..., 2] / 20.0  # TODO: better norm
+
                 keypoints[subject][action][seg_idx] = kps
+
     return dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right
+
 
 def fetch(subjects, dataset, keypoints, action_filter=None, downsample=5, subset=1, parse_3d_poses=True):
     out_poses_3d = []
@@ -201,6 +221,7 @@ def fetch(subjects, dataset, keypoints, action_filter=None, downsample=5, subset
                 out_poses_3d[i] = out_poses_3d[i][::stride]
     return out_camera_params, out_poses_3d, out_poses_2d
 
+
 def fetch_ntu(subjects, dataset, keypoints, action_filter=None, downsample=5, subset=1, parse_3d_poses=True):
     out_poses_3d = []
     out_poses_2d = []
@@ -247,6 +268,7 @@ def fetch_ntu(subjects, dataset, keypoints, action_filter=None, downsample=5, su
             if out_poses_3d is not None:
                 out_poses_3d[i] = out_poses_3d[i][::stride]
     return out_camera_params, out_poses_3d, out_poses_2d
+
 
 def create_model(cfg, dataset, poses_valid_2d):
     filter_widths = [int(x) for x in cfg.architecture.split(",")]

@@ -41,7 +41,7 @@ def main(cfg: DictConfig):
                 'Unable to create checkpoint directory:', cfg.checkpoint)
     if cfg.dataset == 'ntu':
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
-                                                                                                                  cfg.dataset, cfg.keypoints)
+                                                                                                                  cfg.dataset, cfg.keypoints, cfg.depth_map)
     else:
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset(cfg.data_dir,
                                                                                                               cfg.dataset, cfg.keypoints)
