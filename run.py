@@ -5,6 +5,7 @@ import hydra
 import os
 import sys
 import errno
+import random
 from time import time
 
 import numpy as np
@@ -17,6 +18,11 @@ from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGenerato
 from trainval import create_model, fetch_ntu, load_dataset, fetch, load_dataset_ntu, load_weight, train, eval, prepare_actions, fetch_actions, evaluate
 
 log = logging.getLogger('hpe-3d')
+
+random.seed(42)
+np.random.seed(42)
+torch.manual_seed(42)
+torch.cuda.manual_seed_all(42)
 
 
 @hydra.main(config_path="config/", config_name="conf")
@@ -95,7 +101,7 @@ def main(cfg: DictConfig):
 
         epoch = 0
         initial_momentum = 0.1
-        final_momentum = 0.01
+        final_momentum = 0.001
 
         train_dataset = ChunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
                                                 cfg.stride,

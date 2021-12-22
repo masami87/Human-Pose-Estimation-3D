@@ -5,23 +5,24 @@ evaluate: ""
 resume: ""
 
 # data
-# subjects_train: "S1,S5,S6,S7,S8"
-# subjects_test: "S9,S11"
-# dataset: "h36m"
-# keypoints: "cpn_ft_h36m_dbb"
+subjects_train: "S1,S5,S6,S7,S8"
+subjects_test: "S9,S11"
+dataset: "h36m"
+keypoints: "cpn_ft_h36m_dbb"
+depth_map: false
 
-subjects_train: "S001,S002"
-subjects_test: "S003"
-dataset: "ntu"
-keypoints: "gt"
-depth_map: true
+# subjects_train: "S001,S002"
+# subjects_test: "S003"
+# dataset: "ntu"
+# keypoints: "gt"
+# depth_map: true
 
 actions: "*"
 downsample: 1
 subset: 1
 
 # model
-architecture: "3,3,3"
+architecture: "3,3,3,3"
 channels: 1024
 dropout: 0.25
 causal: false
