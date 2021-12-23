@@ -1,8 +1,10 @@
-data_dir: "/home/wt/py_projects/HPE-3d/data/"
+data_dir: "/home/wt/py_projects/Human-Pose-Estimation-3D/data/"
 checkpoint: "checkpoint"
 
 evaluate: ""
 resume: ""
+
+gpu: 0
 
 # data
 subjects_train: "S1,S5,S6,S7,S8"
@@ -32,7 +34,7 @@ disable_optimizations: false
 # train
 fp16: false
 num_workers: 4
-batch_size: 128
+batch_size: 1024
 stride: 1
 learning_rate: 0.001
 lr_decay: 0.95
@@ -40,7 +42,7 @@ epochs: 60
 data_augmentation: true
 no_eval: false
 checkpoint_frequency: 10
-export_training_curves: true
+export_training_curves: false
 
 # evaluate
 by_subject: false

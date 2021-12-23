@@ -19,11 +19,6 @@ from trainval import create_model, fetch_ntu, load_dataset, fetch, load_dataset_
 
 log = logging.getLogger('hpe-3d')
 
-random.seed(42)
-np.random.seed(42)
-torch.manual_seed(42)
-torch.cuda.manual_seed_all(42)
-
 
 @hydra.main(config_path="config/", config_name="conf")
 def main(cfg: DictConfig):
@@ -45,6 +40,14 @@ def main(cfg: DictConfig):
         if e.errno != errno.EEXIST:
             raise RuntimeError(
                 'Unable to create checkpoint directory:', cfg.checkpoint)
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
+
+    random.seed(42)
+    np.random.seed(42)
+    torch.manual_seed(42)
+    torch.cuda.manual_seed_all(42)
+
     if cfg.dataset == 'ntu':
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
                                                                                                                   cfg.dataset, cfg.keypoints, cfg.depth_map)
@@ -145,7 +148,6 @@ def main(cfg: DictConfig):
         accelerator = Accelerator(device_placement=True, fp16=cfg.fp16)
         model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader = accelerator.prepare(
             model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader)
-
         log.info("Training on device: {}".format(accelerator.device))
 
         loss_min = 49.5
