@@ -11,6 +11,8 @@ checkpoint/
 
 # ignore data
 *.npz
+*.zip
+data/custom/
 
 # ignore vecode
 .vscode/
