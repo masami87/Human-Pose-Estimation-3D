@@ -1,15 +1,12 @@
 import os
-import sys
-import errno
-from time import time
+
+from alive_progress import alive_bar
 import numpy as np
 import torch
-import torch.nn as nn
-from alive_progress import alive_bar
 
-from common.camera import world_to_camera, normalize_screen_coordinates
-from common.utils import deterministic_random
+from common.camera import normalize_screen_coordinates, world_to_camera
 from common.loss import mpjpe, p_mpjpe
+from common.utils import deterministic_random
 from model.VideoPose3D import TemporalModel, TemporalModelOptimized1f
 
 
@@ -117,6 +114,7 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
     joints_left, joints_right = list(dataset.skeleton().joints_left()), list(
         dataset.skeleton().joints_right())
     keypoints = keypoints['positions_2d'].item()
+    depth_vecs = {}
 
     if use_depth:
         print("Loading depth vec...")
@@ -158,7 +156,7 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
                 kps[..., :2] = normalize_screen_coordinates(
                     kps[..., :2], w=1920, h=1080)
                 if use_depth:
-                    assert kpt_2d.shape[-1] == 3, "No depth dimentions with tensor shape: {}".format(
+                    assert kps.shape[-1] == 3, "No depth dimentions with tensor shape: {}".format(
                         kps.shape)
                     kps[..., 2] = kps[..., 2] / 20.0  # TODO: better norm
 
