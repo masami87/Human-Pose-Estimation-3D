@@ -268,7 +268,8 @@ def main(cfg: DictConfig):
             poses_act, poses_2d_act = fetch_actions(
                 actions[action_key], keypoints, dataset, cfg.downsample)
             _dataset = UnchunkedGeneratorDataset(None, poses_act, poses_2d_act,
-                                                 pad=pad, causal_shift=causal_shift, augment=False)
+                                                 pad=pad, causal_shift=causal_shift, augment=cfg.test_time_augment, kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
+                                                 joints_right=joints_right)
             action_loader = DataLoader(_dataset, 1, shuffle=False)
             action_loader = accelerator.prepare_data_loader(action_loader)
 

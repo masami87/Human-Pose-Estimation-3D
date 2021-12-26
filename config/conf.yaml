@@ -46,3 +46,4 @@ export_training_curves: false
 
 # evaluate
 by_subject: false
+test_time_augment: true
