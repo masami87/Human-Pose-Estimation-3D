@@ -309,15 +309,19 @@ def load_weight(cfg, model_pos_train, model_pos):
     return model_pos_train, model_pos, checkpoint
 
 
-def train(accelerator, model_pos_train, train_loader, optimizer):
+def train(model_pos_train, train_generator, optimizer):
     epoch_loss_3d_train = 0
     N = 0
 
-    # TODO dataloader and tqdm
-    total = len(train_loader)
+    gen = train_generator.next_epoch()
+    total = len(gen)
     with alive_bar(total, title='Train', spinner='elements') as bar:
-        for batch_data in train_loader:
-            inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
+        for _, batch_3d, batch_2d in gen:
+            inputs_3d = torch.from_numpy(batch_3d.astype('float32'))
+            inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+            if torch.cuda.is_available():
+                inputs_3d = inputs_3d.cuda()
+                inputs_2d = inputs_2d.cuda()
             inputs_3d[:, :, 0] = 0
 
             optimizer.zero_grad()
@@ -325,15 +329,12 @@ def train(accelerator, model_pos_train, train_loader, optimizer):
             # Predict 3D poses
             predicted_3d_pos = model_pos_train(inputs_2d)
             loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
-
             epoch_loss_3d_train += inputs_3d.shape[0] * \
                 inputs_3d.shape[1] * loss_3d_pos.item()
-            N += inputs_3d.shape[0] * inputs_3d.shape[1]
+            N += inputs_3d.shape[0]*inputs_3d.shape[1]
 
             loss_total = loss_3d_pos
-
-            # accelerator backward
-            accelerator.backward(loss_total)
+            loss_total.backward()
 
             optimizer.step()
 
@@ -344,21 +345,26 @@ def train(accelerator, model_pos_train, train_loader, optimizer):
     return epoch_losses_eva
 
 
-def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
-    N = 0
-    epoch_loss_3d_valid = 0
-    epoch_loss_3d_train_eval = 0
-
+def eval(model_train_dict, model_pos, test_generator, train_generator_eval):
     with torch.no_grad():
         model_pos.load_state_dict(model_train_dict)
         model_pos.eval()
 
-        # Evaluate on test set
-        total_test = len(test_loader)
-        with alive_bar(total_test, title='Test ', spinner='flowers') as bar:
-            for batch_data in test_loader:
-                inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
+        N = 0
+        epoch_loss_3d_valid = 0
+        epoch_loss_3d_train_eval = 0
 
+        # Evaluate on test set
+        gen_test = test_generator.next_epoch()
+        total_test = len(gen_test)
+        with alive_bar(gen_test, title='Test ', spinner='flowers') as bar:
+            for cam, batch, batch_2d in gen_test:
+                inputs_3d = torch.from_numpy(batch.astype('float32'))
+                inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+                if torch.cuda.is_available():
+                    inputs_3d = inputs_3d.cuda()
+                    inputs_2d = inputs_2d.cuda()
+                inputs_traj = inputs_3d[:, :, :1].clone()
                 inputs_3d[:, :, 0] = 0
 
                 # Predict 3D poses
@@ -366,7 +372,7 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
                 loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
                 epoch_loss_3d_valid += inputs_3d.shape[0] * \
                     inputs_3d.shape[1] * loss_3d_pos.item()
-                N += inputs_3d.shape[0] * inputs_3d.shape[1]
+                N += inputs_3d.shape[0]*inputs_3d.shape[1]
 
                 bar()
 
@@ -374,14 +380,16 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
 
         # Evaluate on training set, this time in evaluation mode
         N = 0
-        total_eval = len(train_loader_eval)
+        gen_eval = train_generator_eval.next
+        total_eval = len(gen_eval)
         with alive_bar(total_eval, title='Eval ', spinner='flowers') as bar:
-            for batch_data in train_loader_eval:
-                inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
-                if inputs_2d.shape[1] == 0:
-                    # This happens only when downsampling the dataset
-                    continue
-
+            for cam, batch, batch_2d in gen_eval:
+                inputs_3d = torch.from_numpy(batch.astype('float32'))
+                inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+                if torch.cuda.is_available():
+                    inputs_3d = inputs_3d.cuda()
+                    inputs_2d = inputs_2d.cuda()
+                inputs_traj = inputs_3d[:, :, :1].clone()
                 inputs_3d[:, :, 0] = 0
 
                 # Compute 3D poses
@@ -389,7 +397,7 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
                 loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
                 epoch_loss_3d_train_eval += inputs_3d.shape[0] * \
                     inputs_3d.shape[1] * loss_3d_pos.item()
-                N += inputs_3d.shape[0] * inputs_3d.shape[1]
+                N += inputs_3d.shape[0]*inputs_3d.shape[1]
 
                 bar()
 
@@ -442,18 +450,33 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
     return out_poses_3d, out_poses_2d
 
 
-def evaluate(test_loader, model_pos, action=None, log=None):
+def evaluate(test_generator, model_pos, action=None, log=None):
     epoch_loss_3d_pos = 0
     epoch_loss_3d_pos_procrustes = 0
     with torch.no_grad():
         model_pos.eval()
         N = 0
-        for batch_data in test_loader:
-            inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
-            inputs_3d[:, :, 0] = 0
+        for _, batch, batch_2d in test_generator.next_epoch():
+            inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
+            if torch.cuda.is_available():
+                inputs_2d = inputs_2d.cuda()
 
             # Positional model
             predicted_3d_pos = model_pos(inputs_2d)
+
+            # Test-time augmentation (if enabled)
+            if test_generator.augment_enabled():
+                # Undo flipping and take average with non-flipped version
+                predicted_3d_pos[1, :, :, 0] *= -1
+                predicted_3d_pos = torch.mean(
+                    predicted_3d_pos, dim=0, keepdim=True)
+
+            inputs_3d = torch.from_numpy(batch.astype('float32'))
+            if torch.cuda.is_available():
+                inputs_3d = inputs_3d.cuda()
+            inputs_3d[:, :, 0] = 0
+            if test_generator.augment_enabled():
+                inputs_3d = inputs_3d[:1]
 
             error = mpjpe(predicted_3d_pos, inputs_3d)
 

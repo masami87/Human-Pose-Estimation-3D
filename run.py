@@ -15,6 +15,7 @@ from accelerate import Accelerator
 
 from common.utils import summary
 from common.dataset_generators import UnchunkedGeneratorDataset, ChunkedGeneratorDataset
+from common.generators import UnchunkedGenerator, ChunkedGenerator
 from trainval import create_model, fetch_ntu, load_dataset, fetch, load_dataset_ntu, load_weight, train, eval, prepare_actions, fetch_actions, evaluate
 
 log = logging.getLogger('hpe-3d')
@@ -43,10 +44,10 @@ def main(cfg: DictConfig):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(cfg.gpu)
 
-    random.seed(42)
-    np.random.seed(42)
-    torch.manual_seed(42)
-    torch.cuda.manual_seed_all(42)
+    # random.seed(42)
+    # np.random.seed(42)
+    # torch.manual_seed(42)
+    # torch.cuda.manual_seed_all(42)
 
     if cfg.dataset == 'ntu':
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
@@ -79,12 +80,14 @@ def main(cfg: DictConfig):
     model_pos_train, model_pos, checkpoint = load_weight(
         cfg, model_pos_train, model_pos)
 
-    test_dataset = UnchunkedGeneratorDataset(cameras_valid, poses_valid, poses_valid_2d,
-                                             pad=pad, causal_shift=causal_shift, augment=False,
-                                             kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
-    test_loader = DataLoader(test_dataset, batch_size=1,
-                             shuffle=False, num_workers=cfg.num_workers)
-    log.info("Testing on {} frames".format(test_dataset.num_frames()))
+    if torch.cuda.is_available():
+        model_pos = model_pos.cuda()
+        model_pos_train = model_pos_train.cuda()
+
+    test_generator = UnchunkedGenerator(cameras_valid, poses_valid, poses_valid_2d,
+                                        pad=pad, causal_shift=causal_shift, augment=False,
+                                        kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
+    log.info("Testing on {} frames".format(test_generator.num_frames()))
 
     if not cfg.evaluate:
         if cfg.dataset == 'ntu':
@@ -106,28 +109,19 @@ def main(cfg: DictConfig):
         initial_momentum = 0.1
         final_momentum = 0.001
 
-        train_dataset = ChunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
-                                                cfg.stride,
-                                                pad=pad, causal_shift=causal_shift, shuffle=True, augment=cfg.data_augmentation,
-                                                kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
-                                                joints_right=joints_right)
-        train_loader = DataLoader(
-            train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
-
-        train_dataset_eval = UnchunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
-                                                       pad=pad, causal_shift=causal_shift, augment=False)
-        train_loader_eval = DataLoader(
-            train_dataset_eval, batch_size=1, shuffle=False, num_workers=cfg.num_workers)
+        train_generator = ChunkedGenerator(cfg.batch_size//cfg.stride, cameras_train, poses_train, poses_train_2d, cfg.stride,
+                                           pad=pad, causal_shift=causal_shift, shuffle=True, augment=cfg.data_augmentation,
+                                           kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
+        train_generator_eval = UnchunkedGenerator(cameras_train, poses_train, poses_train_2d,
+                                                  pad=pad, causal_shift=causal_shift, augment=False)
 
         log.info('Training on {} frames'.format(
-            train_dataset_eval.num_frames()))
-        sample_inputs_2d = train_dataset[0][-1]
-        input_shape = [cfg.batch_size]
-        input_shape += list(sample_inputs_2d.shape)
+            train_generator_eval.num_frames()))
+        input_shape = [cfg.batch_size, receptive_field, 17, 2]
         log.info('Input 2d shape: {}'.format(
             input_shape))
         summary(log, model_pos,
-                sample_inputs_2d.shape, cfg.batch_size, device='cpu')
+                input_shape[1:], cfg.batch_size, device='cpu')
 
         if cfg.resume:
             epoch = checkpoint['epoch']
@@ -144,11 +138,7 @@ def main(cfg: DictConfig):
         log.info(
             '** The final evaluation will be carried out after the last training epoch.')
 
-        # Prepare everything for gpu and fp16
-        accelerator = Accelerator(device_placement=True, fp16=cfg.fp16)
-        model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader = accelerator.prepare(
-            model_pos_train, model_pos, optimizer, train_loader, train_loader_eval, test_loader)
-        log.info("Training on device: {}".format(accelerator.device))
+        log.info("Training on device: {}".format(model_pos_train.device))
 
         loss_min = 49.5
 
@@ -159,14 +149,14 @@ def main(cfg: DictConfig):
 
             # Regular supervised scenario
             epoch_loss_3d = train(
-                accelerator, model_pos_train, train_loader, optimizer)
+                model_pos_train, train_generator, optimizer)
             losses_3d_train.append(epoch_loss_3d)
 
             # After training an epoch, whether to evaluate the loss of the training and validation set
             if not cfg.no_eval:
                 model_train_dict = model_pos_train.state_dict()
                 losses_3d_valid_ave, losses_3d_train_eval_ave = eval(
-                    model_train_dict, model_pos, test_loader, train_loader_eval)
+                    model_train_dict, model_pos, test_generator, train_generator_eval)
                 losses_3d_valid.append(losses_3d_valid_ave)
                 losses_3d_train_eval.append(losses_3d_train_eval_ave)
 
@@ -267,14 +257,11 @@ def main(cfg: DictConfig):
 
             poses_act, poses_2d_act = fetch_actions(
                 actions[action_key], keypoints, dataset, cfg.downsample)
-            _dataset = UnchunkedGeneratorDataset(None, poses_act, poses_2d_act,
-                                                 pad=pad, causal_shift=causal_shift, augment=cfg.test_time_augment, kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
-                                                 joints_right=joints_right)
-            action_loader = DataLoader(_dataset, 1, shuffle=False)
-            action_loader = accelerator.prepare_data_loader(action_loader)
+            gen = UnchunkedGenerator(None, poses_act, poses_2d_act,
+                                     pad=pad, causal_shift=causal_shift, augment=cfg.test_time_augment,
+                                     kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
 
-            e1, e2 = evaluate(action_loader, model_pos,
-                              action=action_key, log=log)
+            e1, e2 = evaluate(gen, model_pos, action=action_key, log=log)
             errors_p1.append(e1)
             errors_p2.append(e2)
 
