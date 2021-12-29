@@ -165,12 +165,7 @@ class UnchunkedGeneratorDataset(Dataset):
         self.poses_3d = [] if poses_3d is None else poses_3d
         self.poses_2d = poses_2d
 
-        self.aug_threash = len(self.poses_2d)
-
-        if augment:
-            self.poses_2d += self.poses_2d
-            self.cameras += self.cameras
-            self.poses_3d += self.poses_3d
+        self.augment = augment
 
     def num_frames(self):
         count = 0
@@ -197,20 +192,26 @@ class UnchunkedGeneratorDataset(Dataset):
                            ((self.pad + self.causal_shift, self.pad -
                              self.causal_shift), (0, 0), (0, 0)),
                            'edge')
-        if index >= self.aug_threash:
+        if self.augment:
             # Append flipped version
             if single_cam is not None:
-                single_cam[2] *= -1
-                single_cam[7] *= -1
+                single_cam = np.expand_dims(single_cam, axis=0)
+                single_cam = np.concatenate((single_cam, single_cam), axis=0)
+                single_cam[1, 2] *= -1
+                single_cam[1, 7] *= -1
 
             if single_3d is not None:
-                single_3d[:, :, 0] *= -1
-                single_3d[:, self.joints_left + self.joints_right] = single_3d[
-                    :, self.joints_right + self.joints_left]
+                single_3d = np.expand_dims(single_3d, axis=0)
+                single_3d = np.concatenate((single_3d, single_3d), axis=0)
+                single_3d[1, :, :, 0] *= -1
+                single_3d[1, :, self.joints_left + self.joints_right] = single_3d[1,
+                                                                                  :, self.joints_right + self.joints_left]
 
-            single_2d[:, :, 0] *= -1
-            single_2d[:, self.kps_left + self.kps_right] = single_2d[
-                :, self.kps_right + self.kps_left]
+            single_2d = np.expand_dims(single_2d, axis=0)
+            single_2d = np.concatenate((single_2d, single_2d), axis=0)
+            single_2d[1, :, :, 0] *= -1
+            single_2d[1, :, self.kps_left + self.kps_right] = single_2d[1,
+                                                                        :, self.kps_right + self.kps_left]
 
         if single_cam is not None and single_3d is not None:
             return single_cam, single_3d, single_2d

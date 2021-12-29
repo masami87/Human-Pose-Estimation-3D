@@ -274,7 +274,7 @@ def main(cfg: DictConfig):
             action_loader = accelerator.prepare_data_loader(action_loader)
 
             e1, e2 = evaluate(action_loader, model_pos,
-                              action=action_key, log=log)
+                              action=action_key, log=log, joints_left=joints_left, joints_right=joints_right, test_augment=cfg.test_time_augment)
             errors_p1.append(e1)
             errors_p2.append(e2)
 

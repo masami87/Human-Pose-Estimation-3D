@@ -442,7 +442,7 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
     return out_poses_3d, out_poses_2d
 
 
-def evaluate(test_loader, model_pos, action=None, log=None):
+def evaluate(test_loader, model_pos, action=None, log=None, joints_left=None, joints_right=None, test_augment=True):
     epoch_loss_3d_pos = 0
     epoch_loss_3d_pos_procrustes = 0
     with torch.no_grad():
@@ -450,10 +450,24 @@ def evaluate(test_loader, model_pos, action=None, log=None):
         N = 0
         for batch_data in test_loader:
             inputs_3d, inputs_2d = batch_data[-2], batch_data[-1]
-            inputs_3d[:, :, 0] = 0
 
+            if test_augment:
+                inputs_2d = torch.squeeze(inputs_2d, 0)
+                inputs_3d = torch.squeeze(inputs_3d, 0)
+
+            inputs_3d[:, :, 0] = 0
             # Positional model
             predicted_3d_pos = model_pos(inputs_2d)
+
+            if test_augment:
+                assert joints_left is not None and joints_right is not None
+                predicted_3d_pos[1, :, :, 0] *= -1
+                predicted_3d_pos[1, :, joints_left +
+                                 joints_right] = predicted_3d_pos[1, :, joints_right + joints_left]
+                predicted_3d_pos = torch.mean(
+                    predicted_3d_pos, dim=0, keepdim=True)
+
+                inputs_3d = inputs_3d[:1]
 
             error = mpjpe(predicted_3d_pos, inputs_3d)
 
