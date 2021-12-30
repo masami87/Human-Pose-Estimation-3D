@@ -313,8 +313,8 @@ def train(model_pos_train, train_generator, optimizer):
     epoch_loss_3d_train = 0
     N = 0
 
+    total = len(train_generator)
     gen = train_generator.next_epoch()
-    total = len(gen)
     with alive_bar(total, title='Train', spinner='elements') as bar:
         for _, batch_3d, batch_2d in gen:
             inputs_3d = torch.from_numpy(batch_3d.astype('float32'))
@@ -355,9 +355,9 @@ def eval(model_train_dict, model_pos, test_generator, train_generator_eval):
         epoch_loss_3d_train_eval = 0
 
         # Evaluate on test set
+        total_test = len(test_generator)
         gen_test = test_generator.next_epoch()
-        total_test = len(gen_test)
-        with alive_bar(gen_test, title='Test ', spinner='flowers') as bar:
+        with alive_bar(total_test, title='Test ', spinner='flowers') as bar:
             for cam, batch, batch_2d in gen_test:
                 inputs_3d = torch.from_numpy(batch.astype('float32'))
                 inputs_2d = torch.from_numpy(batch_2d.astype('float32'))
@@ -380,8 +380,8 @@ def eval(model_train_dict, model_pos, test_generator, train_generator_eval):
 
         # Evaluate on training set, this time in evaluation mode
         N = 0
-        gen_eval = train_generator_eval.next
-        total_eval = len(gen_eval)
+        total_eval = len(train_generator_eval)
+        gen_eval = train_generator_eval.next_epoch()
         with alive_bar(total_eval, title='Eval ', spinner='flowers') as bar:
             for cam, batch, batch_2d in gen_eval:
                 inputs_3d = torch.from_numpy(batch.astype('float32'))
@@ -450,7 +450,7 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
     return out_poses_3d, out_poses_2d
 
 
-def evaluate(test_generator, model_pos, action=None, log=None):
+def evaluate(test_generator, model_pos, action=None, log=None, joints_left=None, joints_right=None):
     epoch_loss_3d_pos = 0
     epoch_loss_3d_pos_procrustes = 0
     with torch.no_grad():
@@ -468,6 +468,8 @@ def evaluate(test_generator, model_pos, action=None, log=None):
             if test_generator.augment_enabled():
                 # Undo flipping and take average with non-flipped version
                 predicted_3d_pos[1, :, :, 0] *= -1
+                predicted_3d_pos[1, :, joints_left +
+                                 joints_right] = predicted_3d_pos[1, :, joints_right + joints_left]
                 predicted_3d_pos = torch.mean(
                     predicted_3d_pos, dim=0, keepdim=True)
 

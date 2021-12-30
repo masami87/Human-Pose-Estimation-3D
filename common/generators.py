@@ -83,6 +83,8 @@ class ChunkedGenerator:
         self.joints_left = joints_left
         self.joints_right = joints_right
 
+        self.iters = -1
+
     def num_frames(self):
         return self.num_batches * self.batch_size
 
@@ -94,6 +96,13 @@ class ChunkedGenerator:
 
     def augment_enabled(self):
         return self.augment
+    
+    def __len__(self):
+        if self.iters > 0:
+            return self.iters
+        else:
+            self.iters = sum(1 for _ in self.next_epoch())
+            return self.iters
 
     def next_pairs(self):
         if self.state is None:
@@ -213,6 +222,7 @@ class UnchunkedGenerator:
         self.cameras = [] if cameras is None else cameras
         self.poses_3d = [] if poses_3d is None else poses_3d
         self.poses_2d = poses_2d
+        self.iters = -1
 
     def num_frames(self):
         count = 0
@@ -225,6 +235,13 @@ class UnchunkedGenerator:
 
     def set_augment(self, augment):
         self.augment = augment
+
+    def __len__(self):
+        if self.iters > 0:
+            return self.iters
+        else:
+            self.iters = sum(1 for _ in self.next_epoch())
+            return self.iters
 
     def next_epoch(self):
         for seq_cam, seq_3d, seq_2d in zip_longest(self.cameras, self.poses_3d, self.poses_2d):

@@ -80,10 +80,6 @@ def main(cfg: DictConfig):
     model_pos_train, model_pos, checkpoint = load_weight(
         cfg, model_pos_train, model_pos)
 
-    if torch.cuda.is_available():
-        model_pos = model_pos.cuda()
-        model_pos_train = model_pos_train.cuda()
-
     test_generator = UnchunkedGenerator(cameras_valid, poses_valid, poses_valid_2d,
                                         pad=pad, causal_shift=causal_shift, augment=False,
                                         kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
@@ -117,11 +113,11 @@ def main(cfg: DictConfig):
 
         log.info('Training on {} frames'.format(
             train_generator_eval.num_frames()))
-        input_shape = [cfg.batch_size, receptive_field, 17, 2]
+        input_shape = (receptive_field, 17, 2)
         log.info('Input 2d shape: {}'.format(
             input_shape))
         summary(log, model_pos,
-                input_shape[1:], cfg.batch_size, device='cpu')
+                input_shape, cfg.batch_size, device='cpu')
 
         if cfg.resume:
             epoch = checkpoint['epoch']
@@ -138,9 +134,13 @@ def main(cfg: DictConfig):
         log.info(
             '** The final evaluation will be carried out after the last training epoch.')
 
-        log.info("Training on device: {}".format(model_pos_train.device))
-
         loss_min = 49.5
+
+        if torch.cuda.is_available():
+            model_pos = model_pos.cuda()
+            model_pos_train = model_pos_train.cuda()
+
+        log.info("Training on device: {}".format(cfg.gpu))
 
         # Pos model only
         while epoch < cfg.epochs:
@@ -261,7 +261,8 @@ def main(cfg: DictConfig):
                                      pad=pad, causal_shift=causal_shift, augment=cfg.test_time_augment,
                                      kps_left=kps_left, kps_right=kps_right, joints_left=joints_left, joints_right=joints_right)
 
-            e1, e2 = evaluate(gen, model_pos, action=action_key, log=log)
+            e1, e2 = evaluate(gen, model_pos, action=action_key, log=log,
+                              joints_left=joints_left, joints_right=joints_right)
             errors_p1.append(e1)
             errors_p2.append(e2)
 
