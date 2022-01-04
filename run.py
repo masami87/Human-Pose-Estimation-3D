@@ -112,7 +112,7 @@ def main(cfg: DictConfig):
                                                 kps_left=kps_left, kps_right=kps_right, joints_left=joints_left,
                                                 joints_right=joints_right)
         train_loader = DataLoader(
-            train_dataset, batch_size=cfg.batch_size, shuffle=True, num_workers=cfg.num_workers)
+            train_dataset, batch_size=cfg.batch_size, shuffle=False, num_workers=cfg.num_workers)
 
         train_dataset_eval = UnchunkedGeneratorDataset(cameras_train, poses_train, poses_train_2d,
                                                        pad=pad, causal_shift=causal_shift, augment=False)

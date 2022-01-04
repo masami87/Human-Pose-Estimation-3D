@@ -66,6 +66,10 @@ class ChunkedGeneratorDataset(Dataset):
         self.joints_left = joints_left
         self.joints_right = joints_right
 
+        if shuffle:
+            self.random = np.random.RandomState(random_seed)
+            self.pairs = self.random.permutation(self.pairs)
+
     def augment_enabled(self):
         return self.augment
 
