@@ -21,7 +21,6 @@ def load_dataset(data_dir: str, dataset_type: str, keypoints_type: str):
         raise KeyError('Invalid dataset')
 
     print('Preparing data')
-    # TODO ?
     for subject in dataset.subjects():
         for action in dataset[subject].keys():
             anim = dataset[subject][action]
@@ -87,10 +86,13 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
     if dataset_type == "ntu":
         from datasets.ntu_rgbd import NTU_RGBD
         dataset = NTU_RGBD(dataset_path)
+    elif dataset_type == "custom":
+        from datasets.custom_dataset import Custom_dataset
+        dataset = Custom_dataset(dataset_path, remove_static_joints=False)
     else:
         raise KeyError('Invalid dataset')
 
-    print('Preparing data NTU')
+    print('Preparing data {}'.format(dataset_type))
     for subject in dataset.subjects():
         for action in dataset[subject].keys():
             anim = dataset[subject][action]
@@ -98,6 +100,8 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
             for cam in anim.keys():
                 for seg in anim[cam].keys():
                     pos_3d = anim[cam][seg]
+                    if dataset_type == "custom":
+                        pos_3d /= 1000  # mm to m
                     pos_3d[:, 1:] -= pos_3d[:, :1]
                     positions_3d.append(pos_3d)
             anim['positions_3d'] = positions_3d
@@ -154,11 +158,11 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
             for seg_idx, kps in enumerate(keypoints[subject][action]):
                 # Normalize camera frame
                 kps[..., :2] = normalize_screen_coordinates(
-                    kps[..., :2], w=1920, h=1080)
+                    kps[..., :2], w=640, h=480)
                 if use_depth:
                     assert kps.shape[-1] == 3, "No depth dimentions with tensor shape: {}".format(
                         kps.shape)
-                    kps[..., 2] = kps[..., 2] / 20.0  # TODO: better norm
+                    kps[..., 2] = kps[..., 2] / 10000  # TODO: better norm
 
                 keypoints[subject][action][seg_idx] = kps
 

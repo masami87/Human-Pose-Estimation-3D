@@ -29,8 +29,8 @@ def main(cfg: DictConfig):
             'Invlid Config: resume and evaluate can not be set at the same time')
         exit(-1)
 
-    if cfg.dataset != 'ntu' and cfg.depth_map:
-        log.error('Cannot use depth map when not using ntu dataset')
+    if cfg.dataset == 'h36m' and cfg.depth_map:
+        log.error('Cannot use depth map when using h36m dataset')
         exit(-1)
 
     try:
@@ -48,7 +48,7 @@ def main(cfg: DictConfig):
     torch.manual_seed(42)
     torch.cuda.manual_seed_all(42)
 
-    if cfg.dataset == 'ntu':
+    if cfg.dataset != 'h36m':
         dataset, keypoints, keypoints_metadata, kps_left, kps_right, joints_left, joints_right = load_dataset_ntu(cfg.data_dir,
                                                                                                                   cfg.dataset, cfg.keypoints, cfg.depth_map)
     else:
@@ -61,7 +61,7 @@ def main(cfg: DictConfig):
     action_filter = None if cfg.actions == '*' else cfg.actions.split(',')
     if action_filter is not None:
         log.info('Selected actions:', action_filter)
-    if cfg.dataset == 'ntu':
+    if cfg.dataset != 'h36m':
         cameras_valid, poses_valid, poses_valid_2d = fetch_ntu(
             subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
     else:
@@ -87,7 +87,7 @@ def main(cfg: DictConfig):
     log.info("Testing on {} frames".format(test_dataset.num_frames()))
 
     if not cfg.evaluate:
-        if cfg.dataset == 'ntu':
+        if cfg.dataset != 'h36m':
             cameras_train, poses_train, poses_train_2d = fetch_ntu(subjects_train,  dataset, keypoints, action_filter,
                                                                    cfg.downsample, subset=cfg.subset)
         else:

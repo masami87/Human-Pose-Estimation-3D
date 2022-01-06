@@ -7,26 +7,32 @@ resume: ""
 gpu: 0
 
 # data
-subjects_train: "S1,S5,S6,S7,S8"
-subjects_test: "S9,S11"
-dataset: "h36m"
-keypoints: "cpn_ft_h36m_dbb"
-depth_map: false
+# subjects_train: "S1,S5,S6,S7,S8"
+# subjects_test: "S9,S11"
+# dataset: "h36m"
+# keypoints: "cpn_ft_h36m_dbb"
+# depth_map: false
 
 # subjects_train: "S001,S002"
 # subjects_test: "S003"
 # dataset: "ntu"
 # keypoints: "gt"
-# depth_map: true
+# depth_map: False
+
+subjects_train: "P000"
+subjects_test: "P001"
+dataset: "custom"
+keypoints: "gt"
+depth_map: false
 
 actions: "*"
 downsample: 1
 subset: 1
 
 # model
-architecture: "3,3,3,3,3"
+architecture: "3,3"
 channels: 1024
-dropout: 0.25
+dropout: 0.1
 causal: false
 dense: false
 disable_optimizations: false
@@ -34,7 +40,7 @@ disable_optimizations: false
 # train
 fp16: false
 num_workers: 4
-batch_size: 1024
+batch_size: 64
 stride: 1
 learning_rate: 0.001
 lr_decay: 0.95

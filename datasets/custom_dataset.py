@@ -33,12 +33,14 @@ custom_remove_list = [8, 12, 16, 20]
 
 
 class Custom_dataset(MocapDataset):
-    def __init__(self, path, remove_static_joints=True):
+    def __init__(self, path, remove_static_joints=False):
         super().__init__(fps=50, skeleton=copy.deepcopy(custom_skeleton))
         print('Preparing Custom Dataset...')
 
         # Load serialized dataset
-        self._data = np.load(path, allow_pickle=True)['positions_3d']
+        self._data = np.load(path, allow_pickle=True)['positions_3d'].item()
+
+        self.valid_joints = [i for i in range(21)]
 
         if remove_static_joints:
             # Bring the skeleton to 17 joints instead of the original 25
