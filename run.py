@@ -58,12 +58,20 @@ def main(cfg: DictConfig):
     subjects_train = cfg.subjects_train.split(',')
     subjects_test = cfg.subjects_test.split(',')
 
-    action_filter = None if cfg.actions == '*' else cfg.actions.split(',')
-    if action_filter is not None:
-        log.info('Selected actions:', action_filter)
+    actions_test = cfg.actions_test.split(',')
+    actions_train = []
+    for i in range(0, 20):
+        action = 'A%03d' % i
+        if action not in actions_test:
+            actions_train.append(action)
+
+    action_filter = None
+    if actions_test is not None:
+        log.info('Selected train actions:{}'.format(actions_train))
+        log.info('Selected test actions:{}'.format(actions_test))
     if cfg.dataset != 'h36m':
         cameras_valid, poses_valid, poses_valid_2d = fetch_ntu(
-            subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
+            subjects_test, dataset, keypoints, actions_test, cfg.downsample, cfg.subset)
     else:
         cameras_valid, poses_valid, poses_valid_2d = fetch(
             subjects_test, dataset, keypoints, action_filter, cfg.downsample, cfg.subset)
@@ -88,7 +96,7 @@ def main(cfg: DictConfig):
 
     if not cfg.evaluate:
         if cfg.dataset != 'h36m':
-            cameras_train, poses_train, poses_train_2d = fetch_ntu(subjects_train,  dataset, keypoints, action_filter,
+            cameras_train, poses_train, poses_train_2d = fetch_ntu(subjects_train,  dataset, keypoints, actions_train,
                                                                    cfg.downsample, subset=cfg.subset)
         else:
             cameras_train, poses_train, poses_train_2d = fetch(subjects_train,  dataset, keypoints, action_filter,
