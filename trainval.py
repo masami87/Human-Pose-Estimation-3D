@@ -273,7 +273,7 @@ def fetch_ntu(subjects, dataset, keypoints, action_filter=None, downsample=5, su
 
 
 def create_model(cfg, dataset, poses_valid_2d):
-    filter_widths = [int(x) for x in cfg.architecture.split(",")]
+    filter_widths = [int(x) for x in cfg.arch.split(",")]
 
     if not cfg.disable_optimizations and not cfg.dense and cfg.stride == 1:
         # Use optimized model for single-frame predictions

@@ -6,8 +6,8 @@ import json
 from tqdm import tqdm
 import cv2
 
-keypoints_root = '/home/zzj/dataset/scut_key_frame/Label_3d_ba/'
-depth_root = '/home/zzj/dataset/scut/Depth_frame/'
+keypoints_root = '/home/data/scut/Label_3d/'
+depth_root = '/home/data/scut/Depth_frame/'
 
 save_npz_path = '/home/wt/py_projects/Human-Pose-Estimation-3D/data/'
 output_filename = save_npz_path + 'data_3d_custom'
@@ -82,7 +82,7 @@ def process_segment(seg_path):
 
         joints_vec[frame] = np.array(data['points_3d'], dtype=np.float32)
         keypoints_vec[frame] = np.array(data['points'], dtype=np.float32)
-    return joints_vec, keypoints_vec, depth_vec
+    return joints_vec, keypoints_vec, depth_vec, frames
 
 
 def run():
@@ -94,6 +94,8 @@ def run():
     output_3d = {}
     output_2d = {}
     output_dep = {}
+
+    total_frames = 0
 
     for subject in skeletons.keys():
         output_3d[subject] = {}
@@ -118,7 +120,10 @@ def run():
                 for f in tqdm(files):
                     # basename = os.path.basename(f)
                     # name = basename.split('.')[-2]
-                    joints_vec, keypoints_vec, dep_vec = process_segment(f)
+                    joints_vec, keypoints_vec, dep_vec, frames = process_segment(
+                        f)
+
+                    total_frames += frames
 
                     output_3d[subject][action][cam][seg] = joints_vec.astype(
                         'float32')
@@ -128,7 +133,9 @@ def run():
                         'float32')
 
                     seg += 1
+
     print("Finish reading all files.\nSaving...")
+    print("Average frames: {}.".format(total_frames / num_seg))
     np.savez_compressed(output_filename, positions_3d=output_3d)
     np.savez_compressed(output_filename_2d, positions_2d=output_2d)
     np.savez_compressed(output_filename_dep, depths=output_dep)
