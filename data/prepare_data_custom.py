@@ -6,12 +6,12 @@ import json
 from tqdm import tqdm
 import cv2
 
-keypoints_root = '/home/data/scut/Label_3d/'
+keypoints_root = '/home/data/scut/Label_3d_ba/'
 depth_root = '/home/data/scut/Depth_frame/'
 
 save_npz_path = '/home/wt/py_projects/Human-Pose-Estimation-3D/data/'
-output_filename = save_npz_path + 'data_3d_custom'
-output_filename_2d = save_npz_path + 'data_2d_custom_gt'
+output_filename = save_npz_path + 'data_3d_custom_ba'
+output_filename_2d = save_npz_path + 'data_2d_custom_ba_gt'
 output_filename_dep = save_npz_path + 'data_dep_custom'
 
 

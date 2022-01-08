@@ -86,7 +86,7 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
     if dataset_type == "ntu":
         from datasets.ntu_rgbd import NTU_RGBD
         dataset = NTU_RGBD(dataset_path)
-    elif dataset_type == "custom":
+    elif dataset_type == "custom" or dataset_type == "custom_ba":
         from datasets.custom_dataset import Custom_dataset
         dataset = Custom_dataset(dataset_path, remove_static_joints=False)
     else:
