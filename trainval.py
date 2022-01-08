@@ -100,7 +100,7 @@ def load_dataset_ntu(data_dir: str, dataset_type: str, keypoints_type: str, use_
             for cam in anim.keys():
                 for seg in anim[cam].keys():
                     pos_3d = anim[cam][seg]
-                    if dataset_type == "custom":
+                    if dataset_type == "custom" or dataset_type == "custom_ba":
                         pos_3d /= 1000  # mm to m
                     pos_3d[:, 1:] -= pos_3d[:, :1]
                     positions_3d.append(pos_3d)
