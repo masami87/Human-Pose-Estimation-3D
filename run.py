@@ -292,7 +292,7 @@ def main(cfg: DictConfig):
                  round(np.mean(errors_p2), 1)))
 
     if not cfg.by_subject:
-        run_evaluation(all_actions, action_filter)
+        run_evaluation(all_actions, actions_test)
     else:
         for subject in all_actions_by_subject.keys():
             log.info('Evaluating on subject: {}'.format(subject))
