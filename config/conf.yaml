@@ -20,7 +20,7 @@ gpu: 0
 # depth_map: False
 
 subjects_train: "P000,P001"
-subjects_test: "P001,P001"
+subjects_test: "P000,P001"
 actions_test: "A005,A001,A002,A003,A004"
 dataset: "custom"
 keypoints: "gt"

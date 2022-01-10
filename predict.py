@@ -10,7 +10,7 @@ from common.camera import normalize_screen_coordinates
 from common.loss import mpjpe
 from trainval import create_model
 
-config_path = '/home/wt/py_projects/Human-Pose-Estimation-3D/outputs/2022-01-07/20-07-41/.hydra/'
+config_path = '/home/wt/py_projects/Human-Pose-Estimation-3D/outputs/2022-01-08/20-44-58/.hydra/'
 output_filename = 'predict'
 
 log = logging.getLogger('PREDICTION')
@@ -93,14 +93,10 @@ def gen_outputs(model_pos, dataset, keypoints, pad, causal_shift, actions_test, 
     with torch.no_grad():
         model_pos.eval()
         model_pos.cuda()
-        for subject in dataset.subjects():
+        for subject in subjects_test:
             output[subject] = {}
-            if subject not in subjects_test:
-                continue
-            for action in dataset[subject].keys():
+            for action in actions_test:
                 output[subject][action] = {}
-                if action not in actions_test:
-                    continue
                 for cam in dataset[subject][action].keys():
                     output[subject][action][cam] = {}
                     for seg in dataset[subject][action][cam].keys():
@@ -140,6 +136,7 @@ def main(cfg):
                                                                                                               cfg.dataset, cfg.keypoints, cfg.depth_map)
     actions_test = cfg.actions_test.split(',')
     subjects_test = cfg.subjects_test.split(',')
+    log.info("actions test: {}".format(actions_test))
 
     njoints = 21
     features = 2 + cfg.depth_map
