@@ -21,3 +21,8 @@ data/custom/
 outputs/
 
 *.bin
+
+lib/
+tmp_vis/
+demo_tools.py
+demo.py
