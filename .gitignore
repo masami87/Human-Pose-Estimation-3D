@@ -22,3 +22,8 @@ outputs/
 
 *.bin
 *.svg
+
+lib/
+tmp_vis/
+demo.py
+demo_tools.py
