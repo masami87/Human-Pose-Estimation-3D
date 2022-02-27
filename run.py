@@ -98,7 +98,9 @@ def main(cfg: DictConfig):
             model_pos_train.parameters(), lr=lr, amsgrad=True)
         lr_decay = cfg.lr_decay
 
+        losses_total_train = []
         losses_3d_train = []
+        losses_bone_train = []
         losses_3d_train_eval = []
         losses_3d_valid = []
 
@@ -158,15 +160,17 @@ def main(cfg: DictConfig):
             model_pos_train.train()
 
             # Regular supervised scenario
-            epoch_loss_3d = train(
-                accelerator, model_pos_train, train_loader, optimizer)
+            epoch_loss_total, epoch_loss_3d, epoch_loss_bone = train(
+                accelerator, model_pos_train, train_loader, optimizer, cfg.use_bone)
             losses_3d_train.append(epoch_loss_3d)
+            losses_total_train.append(epoch_loss_total)
+            losses_bone_train.append(epoch_loss_bone)
 
             # After training an epoch, whether to evaluate the loss of the training and validation set
             if not cfg.no_eval:
                 model_train_dict = model_pos_train.state_dict()
                 losses_3d_valid_ave, losses_3d_train_eval_ave = eval(
-                    model_train_dict, model_pos, test_loader, train_loader_eval)
+                    model_train_dict, model_pos, test_loader, train_loader_eval, cfg.use_bone)
                 losses_3d_valid.append(losses_3d_valid_ave)
                 losses_3d_train_eval.append(losses_3d_train_eval_ave)
 
@@ -179,10 +183,12 @@ def main(cfg: DictConfig):
                     lr,
                     losses_3d_train[-1] * 1000))
             else:
-                log.info('[%d] time %.2f lr %f 3d_train %f 3d_eval %f 3d_valid %f' % (
+                log.info('[%d] time %.2f lr %f total_train %f bone_train %f 3d_train %f 3d_eval %f 3d_valid %f' % (
                     epoch + 1,
                     elapsed,
                     lr,
+                    losses_total_train[-1] * 1000,
+                    losses_bone_train[-1] * 1000,
                     losses_3d_train[-1] * 1000,
                     losses_3d_train_eval[-1] * 1000,
                     losses_3d_valid[-1] * 1000))
@@ -202,9 +208,15 @@ def main(cfg: DictConfig):
                     loss_min = losses_3d_valid[-1]*1000
 
             # Decay learning rate exponentially
-            lr *= lr_decay
-            for param_group in optimizer.param_groups:
-                param_group['lr'] *= lr_decay
+            if cfg.use_bone:
+                # if epoch > 15:
+                lr *= lr_decay
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= lr_decay
+            else:
+                lr *= lr_decay
+                for param_group in optimizer.param_groups:
+                    param_group['lr'] *= lr_decay
             epoch += 1
 
             # Decay BatchNorm momentum
@@ -274,7 +286,7 @@ def main(cfg: DictConfig):
             action_loader = accelerator.prepare_data_loader(action_loader)
 
             e1, e2 = evaluate(action_loader, model_pos,
-                              action=action_key, log=log, joints_left=joints_left, joints_right=joints_right, test_augment=cfg.test_time_augment)
+                              action=action_key, log=log, joints_left=joints_left, joints_right=joints_right, test_augment=cfg.test_time_augment, use_bone=cfg.use_bone)
             errors_p1.append(e1)
             errors_p2.append(e2)
 

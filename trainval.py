@@ -5,8 +5,9 @@ import numpy as np
 import torch
 
 from common.camera import normalize_screen_coordinates, world_to_camera
-from common.loss import mpjpe, p_mpjpe
+from common.loss import mpjpe, p_mpjpe, loss_bone_all_pairs
 from common.utils import deterministic_random
+from common.bone import get_BoneVecbypose3d, get_pose3dbyBoneVec
 from model.VideoPose3D import TemporalModel, TemporalModelOptimized1f
 
 
@@ -274,16 +275,16 @@ def create_model(cfg, dataset, poses_valid_2d):
     if not cfg.disable_optimizations and not cfg.dense and cfg.stride == 1:
         # Use optimized model for single-frame predictions
         model_pos_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
-                                                   filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels)
+                                                   filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels, use_bone=cfg.use_bone)
     else:
         # When incompatible settings are detected (stride > 1, dense filters, or disabled optimization) fall back to normal model
         model_pos_train = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
                                         filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels,
-                                        dense=cfg.dense)
+                                        dense=cfg.dense, use_bone=cfg.use_bone)
 
     model_pos = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
                               filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels,
-                              dense=cfg.dense)
+                              dense=cfg.dense, use_bone=cfg.use_bone)
 
     receptive_field = model_pos.receptive_field()
     pad = (receptive_field - 1) // 2  # padding on each side
@@ -309,8 +310,10 @@ def load_weight(cfg, model_pos_train, model_pos):
     return model_pos_train, model_pos, checkpoint
 
 
-def train(accelerator, model_pos_train, train_loader, optimizer):
+def train(accelerator, model_pos_train, train_loader, optimizer, use_bone=False):
     epoch_loss_3d_train = 0
+    epoch_loss_bone_train = 0
+    epoch_loss_total_train = 0
     N = 0
 
     # TODO dataloader and tqdm
@@ -324,13 +327,30 @@ def train(accelerator, model_pos_train, train_loader, optimizer):
 
             # Predict 3D poses
             predicted_3d_pos = model_pos_train(inputs_2d)
-            loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+            if use_bone:
+                inputs_bone = get_BoneVecbypose3d(inputs_3d)
+                loss_bone = mpjpe(predicted_3d_pos, inputs_bone)
+                predicted_3d_pos = get_pose3dbyBoneVec(predicted_3d_pos)
+                # total_loss = loss_bone_all_pairs(predicted_3d_pos, inputs_3d)
+                loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+                total_loss = loss_bone + loss_3d_pos
+            else:
+                loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
+                loss_bone = torch.zeros_like(loss_3d_pos)
+                total_loss = loss_3d_pos
 
             epoch_loss_3d_train += inputs_3d.shape[0] * \
                 inputs_3d.shape[1] * loss_3d_pos.item()
+
+            epoch_loss_bone_train += inputs_3d.shape[0] * \
+                inputs_3d.shape[1] * loss_bone.item()
+
+            epoch_loss_total_train += inputs_3d.shape[0] * \
+                inputs_3d.shape[1] * total_loss.item()
+
             N += inputs_3d.shape[0] * inputs_3d.shape[1]
 
-            loss_total = loss_3d_pos
+            loss_total = total_loss
 
             # accelerator backward
             accelerator.backward(loss_total)
@@ -339,12 +359,14 @@ def train(accelerator, model_pos_train, train_loader, optimizer):
 
             bar()
 
-    epoch_losses_eva = epoch_loss_3d_train / N
+    epoch_losses_3d_eva = epoch_loss_3d_train / N
+    epoch_losses_bone_eva = epoch_loss_bone_train / N
+    epoch_losses_total_eva = epoch_loss_total_train / N
 
-    return epoch_losses_eva
+    return epoch_losses_total_eva, epoch_losses_3d_eva, epoch_losses_bone_eva
 
 
-def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
+def eval(model_train_dict, model_pos, test_loader, train_loader_eval, use_bone=False):
     N = 0
     epoch_loss_3d_valid = 0
     epoch_loss_3d_train_eval = 0
@@ -363,6 +385,8 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
 
                 # Predict 3D poses
                 predicted_3d_pos = model_pos(inputs_2d)
+                if use_bone:
+                    predicted_3d_pos = get_pose3dbyBoneVec(predicted_3d_pos)
                 loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
                 epoch_loss_3d_valid += inputs_3d.shape[0] * \
                     inputs_3d.shape[1] * loss_3d_pos.item()
@@ -386,6 +410,8 @@ def eval(model_train_dict, model_pos, test_loader, train_loader_eval):
 
                 # Compute 3D poses
                 predicted_3d_pos = model_pos(inputs_2d)
+                if use_bone:
+                    predicted_3d_pos = get_pose3dbyBoneVec(predicted_3d_pos)
                 loss_3d_pos = mpjpe(predicted_3d_pos, inputs_3d)
                 epoch_loss_3d_train_eval += inputs_3d.shape[0] * \
                     inputs_3d.shape[1] * loss_3d_pos.item()
@@ -442,7 +468,7 @@ def fetch_actions(actions, keypoints, dataset, downsample=1):
     return out_poses_3d, out_poses_2d
 
 
-def evaluate(test_loader, model_pos, action=None, log=None, joints_left=None, joints_right=None, test_augment=True):
+def evaluate(test_loader, model_pos, action=None, log=None, joints_left=None, joints_right=None, test_augment=True, use_bone=False):
     epoch_loss_3d_pos = 0
     epoch_loss_3d_pos_procrustes = 0
     with torch.no_grad():
@@ -458,6 +484,8 @@ def evaluate(test_loader, model_pos, action=None, log=None, joints_left=None, jo
             inputs_3d[:, :, 0] = 0
             # Positional model
             predicted_3d_pos = model_pos(inputs_2d)
+            if use_bone:
+                predicted_3d_pos = get_pose3dbyBoneVec(predicted_3d_pos)
 
             if test_augment:
                 assert joints_left is not None and joints_right is not None

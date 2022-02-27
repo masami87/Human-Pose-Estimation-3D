@@ -1,5 +1,7 @@
 data_dir: "/home/wt/py_projects/Human-Pose-Estimation-3D/data/"
 checkpoint: "checkpoint"
+  
+use_bone: true
 
 evaluate: ""
 resume: ""

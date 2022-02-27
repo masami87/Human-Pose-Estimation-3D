@@ -8,6 +8,26 @@
 import torch
 import numpy as np
 
+
+def loss_bone_all_pairs(predicted, target):
+    """
+    input: N * f * J * 3
+    """
+    assert predicted.shape == target.shape
+
+    def pairs_distance(pose_3d: torch.Tensor):
+        """
+        N * f * J * 3
+        """
+        assert len(pose_3d.shape) == 4
+        pose_3d = pose_3d.view(-1, pose_3d.shape[-2], pose_3d.shape[-1])
+        joints = pose_3d.shape[1]
+        pose_3d = pose_3d.unsqueeze(1).repeat([1, joints, 1, 1])  # N*f,J,J,3
+        pose_3d_t = pose_3d.transpose(1, 2)
+        return pose_3d - pose_3d_t
+
+    return torch.mean(torch.norm(pairs_distance(predicted) - pairs_distance(target), dim=len(target.shape) - 1))
+
 def mpjpe(predicted, target):
     """
     Mean per-joint position error (i.e. mean Euclidean distance),

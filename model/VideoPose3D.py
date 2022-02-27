@@ -6,6 +6,7 @@
 #
 
 import torch.nn as nn
+from common.bone import get_BoneVecbypose2d,get_BoneVecbypose3d
 
 class TemporalModelBase(nn.Module):
     """
@@ -13,7 +14,7 @@ class TemporalModelBase(nn.Module):
     """
     
     def __init__(self, num_joints_in, in_features, num_joints_out,
-                 filter_widths, causal, dropout, channels):
+                 filter_widths, causal, dropout, channels, use_bone=False):
         super().__init__()
         
         # Validate input
@@ -31,6 +32,12 @@ class TemporalModelBase(nn.Module):
         self.pad = [ filter_widths[0] // 2 ]
         self.expand_bn = nn.BatchNorm1d(channels, momentum=0.1)
         self.shrink = nn.Conv1d(channels, num_joints_out*3, 1)
+        
+        self.use_bone = use_bone
+        if use_bone:
+            self.num_bones_in = self.num_joints_in - 1
+            self.num_bones_out = self.num_joints_out - 1
+            self.shrink = nn.Conv1d(channels, self.num_bones_out * 3, 1)
         
 
     def set_bn_momentum(self, momentum):
@@ -65,14 +72,25 @@ class TemporalModelBase(nn.Module):
         assert x.shape[-2] == self.num_joints_in
         assert x.shape[-1] == self.in_features
         
-        sz = x.shape[:3]
-        x = x.view(x.shape[0], x.shape[1], -1)
-        x = x.permute(0, 2, 1)
-        
-        x = self._forward_blocks(x)
-        
-        x = x.permute(0, 2, 1)
-        x = x.view(sz[0], -1, self.num_joints_out, 3)
+        if self.use_bone:
+            sz = x.shape[:3]
+            x = get_BoneVecbypose2d(x) # N * f * 16 * 2
+            x = x.contiguous().view(x.shape[0], x.shape[1], -1)
+            x = x.permute(0, 2, 1)
+            
+            x = self._forward_blocks(x)
+            
+            x = x.permute(0, 2, 1)
+            x = x.view(sz[0], -1, self.num_bones_out, 3)
+        else:
+            sz = x.shape[:3]
+            x = x.view(x.shape[0], x.shape[1], -1)
+            x = x.permute(0, 2, 1)
+            
+            x = self._forward_blocks(x)
+            
+            x = x.permute(0, 2, 1)
+            x = x.view(sz[0], -1, self.num_joints_out, 3)
         
         return x    
 
@@ -83,7 +101,7 @@ class TemporalModel(TemporalModelBase):
     """
     
     def __init__(self, num_joints_in, in_features, num_joints_out,
-                 filter_widths, causal=False, dropout=0.25, channels=1024, dense=False):
+                 filter_widths, causal=False, dropout=0.25, channels=1024, dense=False, use_bone=False):
         """
         Initialize this model.
         
@@ -97,9 +115,11 @@ class TemporalModel(TemporalModelBase):
         channels -- number of convolution channels
         dense -- use regular dense convolutions instead of dilated convolutions (ablation experiment)
         """
-        super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels)
-        
-        self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], bias=False)
+        super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels, use_bone)
+        if use_bone:
+            self.expand_conv = nn.Conv1d(self.num_bones_in*in_features, channels, filter_widths[0], bias=False)
+        else:
+            self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], bias=False)
         
         layers_conv = []
         layers_bn = []
@@ -149,7 +169,7 @@ class TemporalModelOptimized1f(TemporalModelBase):
     """
     
     def __init__(self, num_joints_in, in_features, num_joints_out,
-                 filter_widths, causal=False, dropout=0.25, channels=1024):
+                 filter_widths, causal=False, dropout=0.25, channels=1024, use_bone=False):
         """
         Initialize this model.
         
@@ -162,9 +182,11 @@ class TemporalModelOptimized1f(TemporalModelBase):
         dropout -- dropout probability
         channels -- number of convolution channels
         """
-        super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels)
-        
-        self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], stride=filter_widths[0], bias=False)
+        super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels, use_bone)
+        if use_bone:
+            self.expand_conv = nn.Conv1d(self.num_bones_in*in_features, channels, filter_widths[0],stride=filter_widths[0], bias=False)
+        else:
+            self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], stride=filter_widths[0], bias=False)
         
         layers_conv = []
         layers_bn = []
