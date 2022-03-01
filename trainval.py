@@ -275,16 +275,16 @@ def create_model(cfg, dataset, poses_valid_2d):
     if not cfg.disable_optimizations and not cfg.dense and cfg.stride == 1:
         # Use optimized model for single-frame predictions
         model_pos_train = TemporalModelOptimized1f(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
-                                                   filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels, use_bone=cfg.use_bone)
+                                                   filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels, use_bone=cfg.use_bone, bone_input=cfg.bone_input, joints_encode=cfg.joints_encode)
     else:
         # When incompatible settings are detected (stride > 1, dense filters, or disabled optimization) fall back to normal model
         model_pos_train = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
                                         filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels,
-                                        dense=cfg.dense, use_bone=cfg.use_bone)
+                                        dense=cfg.dense, use_bone=cfg.use_bone, bone_input=cfg.bone_input, joints_encode=cfg.joints_encode)
 
     model_pos = TemporalModel(poses_valid_2d[0].shape[-2], poses_valid_2d[0].shape[-1], dataset.skeleton().num_joints(),
                               filter_widths=filter_widths, causal=cfg.causal, dropout=cfg.dropout, channels=cfg.channels,
-                              dense=cfg.dense, use_bone=cfg.use_bone)
+                              dense=cfg.dense, use_bone=cfg.use_bone, bone_input=cfg.bone_input, joints_encode=cfg.joints_encode)
 
     receptive_field = model_pos.receptive_field()
     pad = (receptive_field - 1) // 2  # padding on each side
