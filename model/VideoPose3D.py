@@ -5,6 +5,7 @@
 # LICENSE file in the root directory of this source tree.
 #
 
+import torch
 import torch.nn as nn
 from common.bone import get_BoneVecbypose2d,get_BoneVecbypose3d
 
@@ -76,8 +77,9 @@ class TemporalModelBase(nn.Module):
         
         sz = x.shape[:3]
         if self.bone_input:
-            x = get_BoneVecbypose2d(x) # N * f * 16 * 2
-            x = x.contiguous()
+            bones = get_BoneVecbypose2d(x) # N * f * 16 * 2
+            bones = x.contiguous()
+            x = torch.cat([x,bones], dim=2)
 
         x = x.view(x.shape[0], x.shape[1], -1)
         x = x.permute(0, 2, 1) # N * feature * f
@@ -118,7 +120,7 @@ class TemporalModel(TemporalModelBase):
         """
         super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels, use_bone, bone_input, joints_encode)
         if use_bone and bone_input:
-            self.expand_conv = nn.Conv1d(self.num_bones_in*in_features, channels, filter_widths[0], bias=False)
+            self.expand_conv = nn.Conv1d((self.num_bones_in + self.num_joints_out)*in_features, channels, filter_widths[0], bias=False)
         else:
             self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], bias=False)
         
@@ -185,7 +187,7 @@ class TemporalModelOptimized1f(TemporalModelBase):
         """
         super().__init__(num_joints_in, in_features, num_joints_out, filter_widths, causal, dropout, channels, use_bone, bone_input, joints_encode)
         if use_bone and bone_input:
-            self.expand_conv = nn.Conv1d(self.num_bones_in*in_features, channels, filter_widths[0],stride=filter_widths[0], bias=False)
+            self.expand_conv = nn.Conv1d((self.num_bones_in + self.num_joints_out) *in_features, channels, filter_widths[0],stride=filter_widths[0], bias=False)
         else:
             self.expand_conv = nn.Conv1d(num_joints_in*in_features, channels, filter_widths[0], stride=filter_widths[0], bias=False)
         
